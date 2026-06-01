@@ -4,65 +4,146 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Geospatial Dashboard</title>
-    <link rel="stylesheet" href="app.css" />
+    <link rel="stylesheet" href="app.css?v=2" />
   </head>
   <body>
     <div class="app">
       <nav class="sidebar" aria-label="Main navigation">
-        <h1 class="sidebar-title">Geospatial Dashboard</h1>
-        <button type="button" class="nav-btn active" data-page="inputs">Inputs</button>
-        <button type="button" class="nav-btn" data-page="preprocessing">Preprocessing</button>
-        <button type="button" class="nav-btn" data-page="analysis">Analysis</button>
-        <button type="button" class="nav-btn" data-page="dashboard">Dashboard</button>
+        <div class="brand">
+          <p class="brand-eyebrow">BCC Geospatial Center</p>
+          <h1 class="brand-title">Geospatial Dashboard</h1>
+        </div>
+        <div class="nav-group">
+          <button type="button" class="nav-btn active" data-page="inputs">
+            <span class="nav-label">Inputs</span>
+          </button>
+          <button type="button" class="nav-btn" data-page="preprocessing">
+            <span class="nav-label">Preprocessing</span>
+          </button>
+          <button type="button" class="nav-btn" data-page="analysis">
+            <span class="nav-label">Analysis</span>
+          </button>
+          <button type="button" class="nav-btn" data-page="dashboard">
+            <span class="nav-label">Dashboard</span>
+          </button>
+        </div>
+        <p class="sidebar-foot">CUNY CREST Institute · Geospatial workflows</p>
       </nav>
 
-      <main class="main">
-        <section id="page-inputs" class="page active">
-          <h2>Inputs</h2>
-          <label class="field">
-            <span>Dataset</span>
-            <select id="dataset">
-              <option value="Landsat" selected>Landsat</option>
-              <option value="Sentinel">Sentinel</option>
-              <option value="HLS">HLS</option>
-            </select>
-          </label>
-          <label class="field">
-            <span>Year</span>
-            <input id="year" type="text" inputmode="numeric" />
-          </label>
-          <label class="field file-field">
-            <span>Raster</span>
-            <input id="raster" type="file" accept=".tif,.tiff,.geotiff,.gtiff" />
-          </label>
-          <fieldset class="checks">
-            <legend>Options</legend>
-            <label><input id="clip" type="checkbox" /> Clip Image</label>
-            <label><input id="cloud" type="checkbox" /> Cloud Mask</label>
-            <label><input id="ndvi" type="checkbox" /> Generate NDVI</label>
-          </fieldset>
-        </section>
-
-        <section id="page-preprocessing" class="page">
-          <h2>Preprocessing</h2>
-          <p class="muted">Configure preprocessing steps before analysis.</p>
-        </section>
-
-        <section id="page-analysis" class="page">
-          <h2>Analysis Options</h2>
-          <div class="btn-row">
-            <button type="button" class="action-btn">Pixel-Based</button>
-            <button type="button" class="action-btn">Object-Based</button>
-            <button type="button" class="action-btn">Deep Learning</button>
+      <div class="workspace">
+        <header class="topbar">
+          <div>
+            <p class="page-eyebrow" id="pageEyebrow">Workflow</p>
+            <h2 class="page-title" id="pageTitle">Inputs</h2>
           </div>
-        </section>
+          <p class="status" id="status" role="status" aria-live="polite"></p>
+        </header>
 
-        <section id="page-dashboard" class="page">
-          <h2>Results Dashboard</h2>
-          <textarea id="results" class="results" rows="16" readonly placeholder="Results will appear here."></textarea>
-        </section>
-      </main>
+        <main class="main">
+          <section id="page-inputs" class="page active">
+            <p class="page-lede">Select your dataset, year, and raster file to begin processing.</p>
+            <div class="card-grid">
+              <article class="card">
+                <h3 class="card-title">Dataset &amp; year</h3>
+                <div class="field-grid">
+                  <label class="field">
+                    <span class="field-label">Dataset</span>
+                    <select id="dataset">
+                      <option value="Landsat" selected>Landsat</option>
+                      <option value="Sentinel">Sentinel</option>
+                      <option value="HLS">HLS</option>
+                    </select>
+                  </label>
+                  <label class="field">
+                    <span class="field-label">Year</span>
+                    <input id="year" type="text" inputmode="numeric" placeholder="e.g. 2023" />
+                  </label>
+                </div>
+              </article>
+
+              <article class="card">
+                <h3 class="card-title">Raster upload</h3>
+                <label class="file-drop" id="fileDrop">
+                  <input id="raster" type="file" accept=".tif,.tiff,.geotiff,.gtiff" hidden />
+                  <span class="file-drop-title">Choose GeoTIFF</span>
+                  <span class="file-drop-hint" id="fileHint">.tif · .tiff · .geotiff</span>
+                </label>
+              </article>
+
+              <article class="card card-wide">
+                <h3 class="card-title">Processing options</h3>
+                <div class="check-grid">
+                  <label class="check-card">
+                    <input id="clip" type="checkbox" />
+                    <span class="check-text">
+                      <strong>Clip Image</strong>
+                      <small>Limit extent to area of interest</small>
+                    </span>
+                  </label>
+                  <label class="check-card">
+                    <input id="cloud" type="checkbox" />
+                    <span class="check-text">
+                      <strong>Cloud Mask</strong>
+                      <small>Mask cloudy pixels before analysis</small>
+                    </span>
+                  </label>
+                  <label class="check-card">
+                    <input id="ndvi" type="checkbox" />
+                    <span class="check-text">
+                      <strong>Generate NDVI</strong>
+                      <small>Vegetation index from spectral bands</small>
+                    </span>
+                  </label>
+                </div>
+              </article>
+            </div>
+          </section>
+
+          <section id="page-preprocessing" class="page">
+            <p class="page-lede">Configure preprocessing steps before running analysis.</p>
+            <article class="card">
+              <h3 class="card-title">Preprocessing</h3>
+              <p class="muted">Clip, mask, and prepare rasters on the Inputs page, then continue to Analysis when ready.</p>
+            </article>
+          </section>
+
+          <section id="page-analysis" class="page">
+            <p class="page-lede">Choose an analysis approach for your prepared raster.</p>
+            <div class="analysis-grid">
+              <button type="button" class="analysis-card" data-method="pixel">
+                <span class="analysis-tag">Per-pixel</span>
+                <strong>Pixel-Based</strong>
+                <span class="muted">Classify or measure each cell independently</span>
+              </button>
+              <button type="button" class="analysis-card" data-method="object">
+                <span class="analysis-tag">Spatial</span>
+                <strong>Object-Based</strong>
+                <span class="muted">Segment and analyze image objects</span>
+              </button>
+              <button type="button" class="analysis-card" data-method="dl">
+                <span class="analysis-tag">AI</span>
+                <strong>Deep Learning</strong>
+                <span class="muted">Neural network models on raster tiles</span>
+              </button>
+            </div>
+          </section>
+
+          <section id="page-dashboard" class="page">
+            <p class="page-lede">Review outputs and logs from your workflow.</p>
+            <article class="card card-wide card-fill">
+              <h3 class="card-title">Results</h3>
+              <textarea
+                id="results"
+                class="results"
+                rows="12"
+                readonly
+                placeholder="Results will appear here after you run an analysis."
+              ></textarea>
+            </article>
+          </section>
+        </main>
+      </div>
     </div>
-    <script src="app.js"></script>
+    <script src="app.js?v=2"></script>
   </body>
 </html>
