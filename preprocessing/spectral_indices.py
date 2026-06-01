@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from preprocessing.pipeline import PreprocessingConfig
+from preprocessing.config import PreprocessingConfig
 
 INDEX_REGISTRY: dict[str, str] = {
     "ndvi": "(nir - red) / (nir + red)",

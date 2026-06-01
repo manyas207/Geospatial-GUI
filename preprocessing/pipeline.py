@@ -1,21 +1,9 @@
 """Run preprocessing steps in order."""
 
-from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
 from preprocessing import clip, cloud_mask, mosaic, spectral_indices, stack_bands
-
-
-@dataclass
-class PreprocessingConfig:
-    input_dir: Path
-    output_dir: Path
-    stack_bands: bool = True
-    clip_to_aoi: bool = True
-    cloud_mask: bool = True
-    mosaic: bool = True
-    spectral_indices: list[str] = field(default_factory=lambda: ["ndvi"])
+from preprocessing.config import PreprocessingConfig
 
 
 def run_preprocessing(config: PreprocessingConfig, context: dict[str, Any]) -> dict[str, Any]:

@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from preprocessing.pipeline import PreprocessingConfig
+from preprocessing.config import PreprocessingConfig
 
 
 def run(context: dict[str, Any], config: PreprocessingConfig) -> dict[str, Any]:

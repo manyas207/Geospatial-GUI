@@ -6,6 +6,9 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 
+data/jobs/*
+!data/jobs/.gitkeep
+
 data/inputs/*
 data/processed/*
 data/outputs/*

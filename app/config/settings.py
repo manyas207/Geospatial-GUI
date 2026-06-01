@@ -13,6 +13,8 @@ class Settings:
     host: str = "127.0.0.1"
     port: int = 8765
     ui_dir: Path = UI_DIR
+    jobs_dir: Path = DATA_DIR / "jobs"
+    # Legacy shared dirs (optional); each request uses data/jobs/{job_id}/ instead
     data_inputs: Path = DATA_DIR / "inputs"
     data_processed: Path = DATA_DIR / "processed"
     data_outputs: Path = DATA_DIR / "outputs"
@@ -34,5 +36,5 @@ def get_settings() -> Settings:
 
 def ensure_data_dirs(settings: Settings | None = None) -> None:
     s = settings or get_settings()
-    for path in (s.data_inputs, s.data_processed, s.data_outputs):
+    for path in (s.jobs_dir, s.data_inputs, s.data_processed, s.data_outputs):
         path.mkdir(parents=True, exist_ok=True)
