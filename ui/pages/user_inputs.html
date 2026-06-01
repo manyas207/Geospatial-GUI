@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>User Inputs</title>
+  <link rel="stylesheet" href="../assets/css/main.css" />
+</head>
+<body class="step-page">
+  <h2>Dataset &amp; AOI</h2>
+
+  <div class="field">
+    <label for="years">Year(s)</label>
+    <input id="years" type="text" placeholder="e.g. 2020,2021 or 2019-2022" />
+  </div>
+
+  <div class="field">
+    <label for="sensor">Sensor / product</label>
+    <select id="sensor">
+      <option value="hls">HLS</option>
+      <option value="landsat">Landsat</option>
+      <option value="sentinel">Sentinel</option>
+    </select>
+  </div>
+
+  <div class="field">
+    <label for="aoi">Area of interest</label>
+    <input id="aoi" type="file" accept=".geojson,.json,.gpkg,.shp,.kml" />
+  </div>
+
+  <div class="actions">
+    <button type="button" id="next">Continue to preprocessing</button>
+  </div>
+
+  <script>
+    document.getElementById("next").addEventListener("click", () => {
+      parent.postMessage({ type: "navigate", step: "preprocessing" }, "*");
+    });
+  </script>
+</body>
+</html>

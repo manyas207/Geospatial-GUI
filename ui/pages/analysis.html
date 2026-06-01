@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Analysis</title>
+  <link rel="stylesheet" href="../assets/css/main.css" />
+</head>
+<body class="step-page">
+  <h2>Analysis</h2>
+  <p>Select one or more analysis methods.</p>
+
+  <div class="checkbox-group">
+    <label><input type="checkbox" name="analysis" value="pixel_based" /> Pixel based</label>
+    <label><input type="checkbox" name="analysis" value="object_based" /> Object based</label>
+    <label><input type="checkbox" name="analysis" value="deep_learning" /> Deep learning (DL)</label>
+  </div>
+
+  <div class="actions">
+    <button type="button" id="run-analysis">Run selected</button>
+    <button type="button" id="next">Continue to accuracy</button>
+  </div>
+
+  <script>
+    document.getElementById("next").addEventListener("click", () => {
+      parent.postMessage({ type: "navigate", step: "accuracy" }, "*");
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+# GUI: embed local HTML in a desktop window (open source, not vendor GIS)
+pywebview>=5.0
+
+# Geospatial / ML (add versions as you pin the stack)
+numpy>=1.24
+rasterio>=1.3
+geopandas>=0.14
+shapely>=2.0
+scikit-learn>=1.3

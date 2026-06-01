@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Dashboard</title>
+  <link rel="stylesheet" href="../assets/css/main.css" />
+</head>
+<body class="step-page">
+  <h2>Dashboard</h2>
+
+  <div class="panel-grid">
+    <section class="card">
+      <h3>Maps</h3>
+      <p id="maps-panel">AOI, basemap, and classification layers.</p>
+    </section>
+    <section class="card">
+      <h3>Classifications</h3>
+      <p id="class-panel">Legend and area-by-class summary.</p>
+    </section>
+    <section class="card">
+      <h3>Model performance</h3>
+      <p id="perf-panel">Comparative metrics across methods.</p>
+    </section>
+    <section class="card">
+      <h3>Summary report</h3>
+      <p id="summary-panel">Run metadata and accuracy narrative.</p>
+    </section>
+  </div>
+
+  <h3>Download</h3>
+  <div class="download-row">
+    <button type="button" data-format="pdf">PDF report</button>
+    <button type="button" data-format="csv">CSV metrics</button>
+    <button type="button" data-format="geopackage">GeoPackage</button>
+  </div>
+
+  <script>
+    document.querySelectorAll("[data-format]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        alert(`Export ${btn.dataset.format} — wire to api/handlers.py`);
+      });
+    });
+  </script>
+</body>
+</html>

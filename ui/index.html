@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Geospatial GUI</title>
+  <link rel="stylesheet" href="assets/css/main.css" />
+</head>
+<body>
+  <header class="app-header">
+    <h1>Geospatial GUI</h1>
+    <nav class="step-nav" aria-label="Workflow steps">
+      <button type="button" data-step="user_inputs" class="active">1. Inputs</button>
+      <button type="button" data-step="preprocessing">2. Preprocessing</button>
+      <button type="button" data-step="analysis">3. Analysis</button>
+      <button type="button" data-step="accuracy">4. Accuracy</button>
+      <button type="button" data-step="dashboard">5. Dashboard</button>
+    </nav>
+  </header>
+
+  <main class="iframe-shell">
+    <!-- Local dev only. External sites should iframe ui/embed/dashboard.html directly. -->
+    <iframe
+      id="step-frame"
+      name="step-frame"
+      title="Workflow step"
+      src="pages/user_inputs.html"
+    ></iframe>
+  </main>
+
+  <footer class="app-footer">
+    <span id="status">Ready</span>
+  </footer>
+
+  <script src="assets/js/navigation.js"></script>
+</body>
+</html>
