@@ -1,7 +1,6 @@
 (function () {
   const PAGE_META = {
     inputs: { eyebrow: "Workflow", title: "Inputs" },
-    preprocessing: { eyebrow: "Workflow", title: "Preprocessing" },
     analysis: { eyebrow: "Analysis", title: "Analysis Options" },
     dashboard: { eyebrow: "Output", title: "Results Dashboard" },
   };
