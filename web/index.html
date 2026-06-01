@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Geospatial Dashboard</title>
+    <link rel="stylesheet" href="app.css" />
+  </head>
+  <body>
+    <div class="app">
+      <nav class="sidebar" aria-label="Main navigation">
+        <h1 class="sidebar-title">Geospatial Dashboard</h1>
+        <button type="button" class="nav-btn active" data-page="inputs">Inputs</button>
+        <button type="button" class="nav-btn" data-page="preprocessing">Preprocessing</button>
+        <button type="button" class="nav-btn" data-page="analysis">Analysis</button>
+        <button type="button" class="nav-btn" data-page="dashboard">Dashboard</button>
+      </nav>
+
+      <main class="main">
+        <section id="page-inputs" class="page active">
+          <h2>Inputs</h2>
+          <label class="field">
+            <span>Dataset</span>
+            <select id="dataset">
+              <option value="Landsat" selected>Landsat</option>
+              <option value="Sentinel">Sentinel</option>
+              <option value="HLS">HLS</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Year</span>
+            <input id="year" type="text" inputmode="numeric" />
+          </label>
+          <label class="field file-field">
+            <span>Raster</span>
+            <input id="raster" type="file" accept=".tif,.tiff,.geotiff,.gtiff" />
+          </label>
+          <fieldset class="checks">
+            <legend>Options</legend>
+            <label><input id="clip" type="checkbox" /> Clip Image</label>
+            <label><input id="cloud" type="checkbox" /> Cloud Mask</label>
+            <label><input id="ndvi" type="checkbox" /> Generate NDVI</label>
+          </fieldset>
+        </section>
+
+        <section id="page-preprocessing" class="page">
+          <h2>Preprocessing</h2>
+          <p class="muted">Configure preprocessing steps before analysis.</p>
+        </section>
+
+        <section id="page-analysis" class="page">
+          <h2>Analysis Options</h2>
+          <div class="btn-row">
+            <button type="button" class="action-btn">Pixel-Based</button>
+            <button type="button" class="action-btn">Object-Based</button>
+            <button type="button" class="action-btn">Deep Learning</button>
+          </div>
+        </section>
+
+        <section id="page-dashboard" class="page">
+          <h2>Results Dashboard</h2>
+          <textarea id="results" class="results" rows="16" readonly placeholder="Results will appear here."></textarea>
+        </section>
+      </main>
+    </div>
+    <script src="app.js"></script>
+  </body>
+</html>
