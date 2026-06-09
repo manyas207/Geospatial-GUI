@@ -8,6 +8,7 @@ Install dependencies and start [Ollama](https://ollama.com/) with a model (e.g. 
 
 ```bash
 pip install -r requirements.txt
+python serve.py
 ```
 
 Open http://127.0.0.1:8765/
