@@ -1,137 +1,279 @@
 <!DOCTYPE html>
+
 <html lang="en">
+
   <head>
+
     <meta charset="utf-8" />
+
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+
     <title>Geospatial Dashboard</title>
-    <link rel="stylesheet" href="app.css?v=2" />
+
+    <link rel="stylesheet" href="app.css?v=9" />
+
   </head>
+
   <body>
+
     <div class="app">
+
       <nav class="sidebar" aria-label="Main navigation">
+
         <div class="brand">
+
           <h1 class="brand-title">Geospatial Dashboard</h1>
+
         </div>
+
         <div class="nav-group">
-          <button type="button" class="nav-btn active" data-page="inputs">
-            <span class="nav-label">Inputs</span>
+
+          <button type="button" class="nav-btn active" data-page="ask">
+
+            <span class="nav-label">Ask</span>
+
           </button>
-          <button type="button" class="nav-btn" data-page="analysis">
-            <span class="nav-label">Analysis</span>
-          </button>
-          <button type="button" class="nav-btn" data-page="dashboard">
+
+          <button type="button" class="nav-btn" data-page="dashboard" id="navDashboard">
+
             <span class="nav-label">Dashboard</span>
+
           </button>
+
         </div>
-        <p class="sidebar-foot">Geospatial workflows</p>
+
+        <p class="sidebar-foot">Ask → analyze → explore results</p>
+
       </nav>
 
+
+
       <div class="workspace">
+
         <header class="topbar">
+
           <div>
+
             <p class="page-eyebrow" id="pageEyebrow">Workflow</p>
-            <h2 class="page-title" id="pageTitle">Inputs</h2>
+
+            <h2 class="page-title" id="pageTitle">Ask a question</h2>
+
           </div>
+
           <p class="status" id="status" role="status" aria-live="polite"></p>
+
         </header>
 
+
+
         <main class="main">
-          <section id="page-inputs" class="page active">
-            <p class="page-lede">Select your dataset, year, and raster file to begin processing.</p>
+
+          <section id="page-ask" class="page active">
+
+            <p class="page-lede">
+
+              Upload GeoTIFFs (and shapefile components for OBIA: .shp, .shx, .dbf) and ask your first question. Results open on the dashboard,
+
+              where you can ask follow-up questions about the analysis.
+
+            </p>
+
             <div class="card-grid">
-              <article class="card">
-                <h3 class="card-title">Dataset &amp; year</h3>
-                <div class="field-grid">
-                  <label class="field">
-                    <span class="field-label">Dataset</span>
-                    <select id="dataset">
-                      <option value="Landsat" selected>Landsat</option>
-                      <option value="Sentinel">Sentinel</option>
-                      <option value="HLS">HLS</option>
-                    </select>
-                  </label>
-                  <label class="field">
-                    <span class="field-label">Year</span>
-                    <input id="year" type="text" inputmode="numeric" placeholder="e.g. 2023" />
-                  </label>
-                </div>
-              </article>
 
               <article class="card">
+
                 <h3 class="card-title">Raster upload</h3>
-                <label class="file-drop" id="fileDrop">
-                  <input id="raster" type="file" accept=".tif,.tiff,.geotiff,.gtiff" hidden />
-                  <span class="file-drop-title">Choose GeoTIFF</span>
-                  <span class="file-drop-hint" id="fileHint">.tif · .tiff · .geotiff</span>
-                </label>
+
+                <div class="file-upload">
+                  <input
+                    id="raster"
+                    type="file"
+                    accept=".tif,.tiff,.geotiff,.gtiff,.shp,.shx,.dbf,.prj,.cpg"
+                    multiple
+                    hidden
+                  />
+
+                  <div class="file-drop" id="fileDrop">
+                    <p class="file-drop-title">Drop files here</p>
+                    <p class="file-drop-hint" id="fileHint">or use Add files — you can add more anytime</p>
+                    <button type="button" class="file-browse-btn" id="fileBrowseBtn">Add files</button>
+                  </div>
+
+                  <ul class="file-list" id="fileList" hidden></ul>
+
+                  <button type="button" class="file-clear-btn hidden" id="fileClearBtn">Clear all</button>
+                </div>
+
               </article>
+
+
 
               <article class="card card-wide">
-                <h3 class="card-title">Processing options</h3>
-                <div class="check-grid">
-                  <label class="check-card">
-                    <input id="clip" type="checkbox" />
-                    <span class="check-text">
-                      <strong>Clip Image</strong>
-                      <small>Limit extent to area of interest</small>
-                    </span>
-                  </label>
-                  <label class="check-card">
-                    <input id="cloud" type="checkbox" />
-                    <span class="check-text">
-                      <strong>Cloud Mask</strong>
-                      <small>Mask cloudy pixels before analysis</small>
-                    </span>
-                  </label>
-                  <label class="check-card">
-                    <input id="ndvi" type="checkbox" />
-                    <span class="check-text">
-                      <strong>Generate NDVI</strong>
-                      <small>Vegetation index from spectral bands</small>
-                    </span>
-                  </label>
-                </div>
+
+                <h3 class="card-title">Your question</h3>
+
+                <label class="field">
+
+                  <span class="field-label">Natural language query</span>
+
+                  <textarea
+
+                    id="queryInput"
+
+                    rows="4"
+
+                    placeholder="e.g. What is the land surface temperature for this scene?"
+
+                  ></textarea>
+
+                </label>
+
+                <button type="button" class="run-btn" id="runQuery">Run analysis</button>
+
               </article>
+
             </div>
+
           </section>
 
-          <section id="page-analysis" class="page">
-            <p class="page-lede">Choose an analysis approach for your prepared raster.</p>
-            <div class="analysis-grid">
-              <button type="button" class="analysis-card" data-method="pixel">
-                <span class="analysis-tag">Per-pixel</span>
-                <strong>Pixel-Based</strong>
-                <span class="muted">Classify or measure each cell independently</span>
-              </button>
-              <button type="button" class="analysis-card" data-method="object">
-                <span class="analysis-tag">Spatial</span>
-                <strong>Object-Based</strong>
-                <span class="muted">Segment and analyze image objects</span>
-              </button>
-              <button type="button" class="analysis-card" data-method="dl">
-                <span class="analysis-tag">AI</span>
-                <strong>Deep Learning</strong>
-                <span class="muted">Neural network models on raster tiles</span>
-              </button>
+
+
+          <section id="page-dashboard" class="page page-dashboard">
+
+            <div id="dashboardEmpty" class="dashboard-empty">
+
+              <p>No dashboard yet. Upload a raster and ask a question on the <strong>Ask</strong> page.</p>
+
+              <button type="button" class="run-btn run-btn-secondary" data-goto="ask">Go to Ask</button>
+
             </div>
+
+
+
+            <div id="dashboardContent" class="dashboard-layout hidden">
+
+              <div class="dashboard-main">
+
+                <div class="dashboard-header">
+
+                  <span class="model-badge" id="dashModel">—</span>
+
+                  <p class="dashboard-summary" id="dashSummary"></p>
+
+                  <p class="dashboard-raster muted" id="dashRaster"></p>
+
+                </div>
+
+                <div class="map-stage">
+
+                  <div class="map-toolbar">
+
+                    <label class="map-layer-label">
+                      <span class="sr-only">Output layer</span>
+
+                      <select id="mapLayerSelect" class="map-layer-select" hidden></select>
+
+                    </label>
+
+                    <div class="map-zoom-controls">
+
+                      <button type="button" class="map-zoom-btn" id="mapZoomOut" title="Zoom out">−</button>
+
+                      <button type="button" class="map-zoom-btn" id="mapZoomReset" title="Fit to view">Fit</button>
+
+                      <button type="button" class="map-zoom-btn" id="mapZoomIn" title="Zoom in">+</button>
+
+                    </div>
+
+                    <a class="download-btn map-download-btn hidden" id="mapDownloadBtn" href="#" download>Download map</a>
+
+                  </div>
+
+                  <div class="map-viewport" id="mapViewport">
+
+                    <img id="mapImage" class="map-layer hidden" alt="Analysis output map" draggable="false" />
+
+                    <p class="map-empty" id="mapEmpty">No map output for this run.</p>
+
+                  </div>
+
+                  <p class="map-caption muted" id="mapCaption"></p>
+
+                  <p class="map-hint muted">Drag to pan · scroll to zoom</p>
+
+                </div>
+
+                <div class="dashboard-meta">
+
+                  <div class="meta-block">
+
+                    <h3 class="card-title">Key metrics</h3>
+
+                    <dl class="stats-grid" id="dashStats"></dl>
+
+                  </div>
+
+                  <div class="meta-block">
+
+                    <h3 class="card-title">Downloads</h3>
+
+                    <ul class="download-list" id="downloadList"></ul>
+
+                  </div>
+
+                  <details class="logs-panel">
+
+                    <summary>Pipeline logs</summary>
+
+                    <pre class="logs-pre" id="dashLogs"></pre>
+
+                  </details>
+
+                </div>
+
+              </div>
+
+              <div class="chat-panel">
+
+                <h3 class="card-title">Conversation</h3>
+
+                <p class="chat-hint muted">Ask follow-up questions about these results.</p>
+
+                <div class="chat-thread" id="chatThread" aria-live="polite"></div>
+
+                <form class="chat-compose" id="followupForm">
+
+                  <label class="sr-only" for="followupInput">Follow-up question</label>
+
+                  <textarea
+
+                    id="followupInput"
+
+                    rows="2"
+
+                    placeholder="e.g. What was the mean temperature? How many segments were found?"
+
+                  ></textarea>
+
+                  <button type="submit" class="run-btn" id="followupBtn">Ask</button>
+
+                </form>
+
+              </div>
+
+            </div>
+
           </section>
 
-          <section id="page-dashboard" class="page">
-            <p class="page-lede">Review outputs and logs from your workflow.</p>
-            <article class="card card-wide card-fill">
-              <h3 class="card-title">Results</h3>
-              <textarea
-                id="results"
-                class="results"
-                rows="12"
-                readonly
-                placeholder="Results will appear here after you run an analysis."
-              ></textarea>
-            </article>
-          </section>
         </main>
+
       </div>
+
     </div>
-    <script src="app.js?v=2"></script>
+
+    <script src="app.js?v=9"></script>
+
   </body>
+
 </html>
+

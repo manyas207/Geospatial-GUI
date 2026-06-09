@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+python-multipart
+pydantic
+rasterio
+numpy
+matplotlib
+scipy
+pandas
+geopandas
+scikit-image
+scikit-learn
+joblib

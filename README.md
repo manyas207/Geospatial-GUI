@@ -1,16 +1,25 @@
 # Geospatial GUI
 
-Web UI (replaces Tkinter) for use in a browser or iframe.
-
 ## Run locally
 
 Work in **Geospatial-GUI-1** (this folder), not `Desktop\Geospatial-GUI` — that older copy can hold port 8080 with stale files.
 
+Install dependencies and start [Ollama](https://ollama.com/) with a model (e.g. `ollama pull llama3.2`).
+
 ```bash
-python serve.py
+pip install -r requirements.txt
 ```
 
 Open http://127.0.0.1:8765/
+
+**Workflow:** upload a raster and ask a question on **Ask** → explore the output on an interactive pan/zoom map on **Dashboard**, with metrics and downloads below → ask follow-up questions in the conversation panel (answered by Ollama using the dashboard context).
+
+Natural-language routing uses your local Ollama server (`OLLAMA_BASE_URL`, default `http://127.0.0.1:11434`). If Ollama is not running, keyword fallback is used instead. Copy `.env.example` to `.env` to change the model name.
+
+### Models
+
+- **LST** (`models/lst_core.py`): Upload Landsat `ST_B10`, `SR_B4`, and `SR_B5` together in one request, or a 3-band stack (thermal, red, NIR).
+- **OBIA** (`models/obia_core.py`): Upload a multi-band GeoTIFF plus training shapefile components (`.shp`, `.shx`, `.dbf`, and optionally `.prj`) in the same request. Without a valid shapefile, only segmentation runs. Set `OBIA_SAMPLES_PATH` to point at a fixed shapefile if needed.
 
 ## Iframe embed
 
