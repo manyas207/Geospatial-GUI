@@ -8,7 +8,7 @@ REFERENCE_DATA_DIR=C:\Users\BCC\Desktop\Gridded Population Data
 
 # Required for Heat & Equity tab — Census ACS tract demographics (free)
 # https://api.census.gov/data/key_signup.html
-CENSUS_API_KEY=your_census_api_key_here
+CENSUS_API_KEY=907859b8cd910563ea85dbe65cba8a6827045222
 
 # Optional — NASA Earthdata for alternate gridded population sources (SEDAC/GPW)
 # EARTHDATA_API_KEY=

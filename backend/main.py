@@ -20,13 +20,33 @@ from backend.constants import ALLOWED_UPLOAD_SUFFIXES, RASTER_SUFFIXES
 from backend.dashboard_chat import answer_about_dashboard
 from backend.nlu import parse_intent
 from backend.router import run as run_model
-from backend.schemas import Artifact, FollowupRequest, FollowupResponse, QueryResponse
+from backend.reference_layers import (
+    layers_overlapping_raster,
+    list_layers,
+    reference_data_dir,
+    resolve_download,
+    resolve_preview,
+)
+from backend.city_layers import decode_preview_token, load_city_layers
+from backend.schemas import (
+    Artifact,
+    CityLayersRequest,
+    CityLayersResponse,
+    FollowupRequest,
+    FollowupResponse,
+    QueryResponse,
+    ReferenceLayer,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 WEB_DIR = PROJECT_ROOT / "web"
 DATA_DIR = PROJECT_ROOT / "data"
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
+REFERENCE_PREVIEW_DIR = DATA_DIR / "reference_previews"
+REFERENCE_PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
+CITY_LAYERS_CACHE = DATA_DIR / "city_layers_cache"
+CITY_LAYERS_CACHE.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(title="Geospatial Dashboard API")
 
@@ -156,6 +176,13 @@ async def query(
         data_dir=DATA_DIR,
     )
 
+    overlap_layers = layers_overlapping_raster(raster_path, cache_dir=REFERENCE_PREVIEW_DIR)
+    if not overlap_layers and intent == "lst" and pipeline_stats.get("geotiff"):
+        overlap_layers = layers_overlapping_raster(
+            Path(str(pipeline_stats["geotiff"])),
+            cache_dir=REFERENCE_PREVIEW_DIR,
+        )
+
     return QueryResponse(
         model=intent,
         summary=summary,
@@ -168,7 +195,28 @@ async def query(
         },
         logs=result.get("logs", ""),
         artifacts=[Artifact(**row) for row in artifact_rows],
+        reference_layers=[ReferenceLayer(**row) for row in overlap_layers],
     )
+
+
+@app.get("/api/reference-layers", response_model=list[ReferenceLayer])
+async def reference_layers() -> list[ReferenceLayer]:
+    if reference_data_dir() is None:
+        return []
+    rows = list_layers(cache_dir=REFERENCE_PREVIEW_DIR)
+    return [ReferenceLayer(**row) for row in rows]
+
+
+@app.get("/api/reference-layers/{layer_id}/preview")
+async def reference_layer_preview(layer_id: str) -> FileResponse:
+    path = resolve_preview(layer_id, cache_dir=REFERENCE_PREVIEW_DIR)
+    return FileResponse(path, media_type="image/png")
+
+
+@app.get("/api/reference-layers/{layer_id}/download")
+async def reference_layer_download(layer_id: str) -> FileResponse:
+    path = resolve_download(layer_id)
+    return FileResponse(path, filename=path.name, media_type="application/octet-stream")
 
 
 @app.get("/api/artifacts/{artifact_id}/download")
@@ -182,6 +230,46 @@ async def preview_artifact(artifact_id: str) -> FileResponse:
     path = decode_artifact_path(artifact_id, DATA_DIR)
     if path.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp"}:
         raise HTTPException(status_code=400, detail="Preview not available for this file type.")
+    return FileResponse(path, media_type="image/png")
+
+
+@app.post("/api/city-layers", response_model=CityLayersResponse)
+async def city_layers(body: CityLayersRequest) -> CityLayersResponse:
+    address = body.address.strip()
+    if not address:
+        raise HTTPException(status_code=400, detail="Address is required.")
+
+    try:
+        result = load_city_layers(address, cache_dir=CITY_LAYERS_CACHE)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ConnectionError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return CityLayersResponse(**result)
+
+
+@app.get("/api/city-layers/map/{token}/preview")
+async def city_map_preview(token: str) -> FileResponse:
+    try:
+        path = decode_preview_token(token, CITY_LAYERS_CACHE)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Map preview not found.")
+    return FileResponse(path, media_type="image/png")
+
+
+@app.get("/api/city-layers/worldpop/{token}/preview")
+async def city_worldpop_preview(token: str) -> FileResponse:
+    try:
+        path = decode_preview_token(token, CITY_LAYERS_CACHE)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Preview not found.")
     return FileResponse(path, media_type="image/png")
 
 

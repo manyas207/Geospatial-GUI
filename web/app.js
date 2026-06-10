@@ -6,7 +6,10 @@
   const PAGE_META = {
     ask: { eyebrow: "Step 1", title: "Ask a question" },
     dashboard: { eyebrow: "Step 2", title: "Dashboard & follow-up" },
+    gfframe: { eyebrow: "GUI Frame", title: "Urban Heat & Equity" },
   };
+
+  const workspaceEl = document.getElementById("workspace");
 
   const navButtons = document.querySelectorAll(".nav-btn");
   const pages = document.querySelectorAll(".page");
@@ -54,11 +57,15 @@
   const followupForm = document.getElementById("followupForm");
   const followupInput = document.getElementById("followupInput");
   const followupBtn = document.getElementById("followupBtn");
+  const referenceLayersHint = document.getElementById("referenceLayersHint");
+  const referenceLayerList = document.getElementById("referenceLayerList");
 
   let dashboard = null;
   let chatMessages = [];
   let mapLayers = [];
   let activeMapLayer = 0;
+  let allReferenceLayers = [];
+  let extraMapLayerIds = new Set();
 
   // Pan/zoom state: transform origin is top-left of the viewport.
   const mapView = {
@@ -140,8 +147,36 @@
     }
   }
 
+  function layerMapKey(layer) {
+    return layer.id || `${layer.label}|${layer.filename}`;
+  }
+
+  function collectMapLayers() {
+    const layers = [];
+    const seen = new Set();
+
+    function push(layer) {
+      if (!layer || !layer.preview_url) return;
+      const key = layerMapKey(layer);
+      if (seen.has(key)) return;
+      seen.add(key);
+      layers.push(layer);
+    }
+
+    if (dashboard) {
+      (dashboard.artifacts || []).forEach(push);
+      (dashboard.reference_layers || []).forEach(push);
+    }
+
+    allReferenceLayers.forEach((layer) => {
+      if (extraMapLayerIds.has(layer.id)) push(layer);
+    });
+
+    return layers;
+  }
+
   function renderMapViewer() {
-    mapLayers = (dashboard.artifacts || []).filter((item) => item.preview_url);
+    mapLayers = collectMapLayers();
     mapLayerSelect.innerHTML = "";
 
     mapLayers.forEach((layer, index) => {
@@ -151,7 +186,135 @@
       mapLayerSelect.appendChild(option);
     });
 
-    setActiveMapLayer(0);
+    if (!dashboardContent.classList.contains("hidden") && mapLayers.length) {
+      setActiveMapLayer(0);
+    } else if (!mapLayers.length) {
+      setActiveMapLayer(0);
+    }
+  }
+
+  function formatReferenceStats(stats) {
+    if (!stats || typeof stats !== "object") return "";
+    const parts = [];
+    if (stats.mean !== undefined) parts.push(`mean ${stats.mean}`);
+    if (stats.min !== undefined && stats.max !== undefined) {
+      parts.push(`range ${stats.min}–${stats.max}`);
+    }
+    if (stats.valid_pixels !== undefined) {
+      parts.push(`${stats.valid_pixels.toLocaleString()} px`);
+    }
+    return parts.join(" · ");
+  }
+
+  function showLayerOnMap(layerId) {
+    extraMapLayerIds.add(layerId);
+    if (dashboardContent.classList.contains("hidden")) {
+      dashboardEmpty.classList.add("hidden");
+      dashboardContent.classList.remove("hidden");
+      if (!dashboard) {
+        dashboard = {
+          model: "reference",
+          summary: "Browsing reference layers from your data folder.",
+          stats: {},
+          logs: "",
+          raster: "",
+          artifacts: [],
+          reference_layers: [],
+        };
+        dashModel.textContent = "REF";
+        dashModel.className = "model-badge model-badge-reference";
+        dashSummary.textContent = dashboard.summary;
+        dashRaster.textContent = "";
+        dashStats.innerHTML = "";
+        dashLogs.textContent = "";
+        chatThread.innerHTML = "";
+      }
+    }
+    renderMapViewer();
+    const index = mapLayers.findIndex((layer) => layer.id === layerId);
+    if (index >= 0) setActiveMapLayer(index);
+    showPage("dashboard");
+  }
+
+  function renderReferenceLayers() {
+    referenceLayerList.innerHTML = "";
+
+    if (!allReferenceLayers.length) {
+      referenceLayersHint.textContent =
+        "No reference layers found. Set REFERENCE_DATA_DIR to your gridded population folder.";
+      return;
+    }
+
+    referenceLayersHint.textContent = `${allReferenceLayers.length} layer${
+      allReferenceLayers.length === 1 ? "" : "s"
+    } available — view on the map or download the GeoTIFF.`;
+
+    allReferenceLayers.forEach((layer) => {
+      const li = document.createElement("li");
+      li.className = "reference-layer-item";
+
+      const icon = document.createElement("span");
+      icon.className = "download-icon";
+      icon.textContent = layer.category === "population" ? "POP" : "REF";
+
+      const info = document.createElement("div");
+      info.className = "download-info";
+
+      const name = document.createElement("strong");
+      name.textContent = layer.label;
+
+      const file = document.createElement("span");
+      file.className = "muted";
+      file.textContent = layer.filename;
+
+      const stats = document.createElement("span");
+      stats.className = "muted reference-stats";
+      stats.textContent = formatReferenceStats(layer.stats);
+
+      info.appendChild(name);
+      info.appendChild(file);
+      if (stats.textContent) info.appendChild(stats);
+
+      const actions = document.createElement("div");
+      actions.className = "reference-actions";
+
+      const viewBtn = document.createElement("button");
+      viewBtn.type = "button";
+      viewBtn.className = "download-btn";
+      viewBtn.textContent = "View on map";
+      viewBtn.addEventListener("click", () => showLayerOnMap(layer.id));
+
+      actions.appendChild(viewBtn);
+
+      if (layer.download_url) {
+        const link = document.createElement("a");
+        link.className = "download-btn";
+        link.href = layer.download_url;
+        link.download = layer.filename;
+        link.textContent = "Download";
+        actions.appendChild(link);
+      }
+
+      li.appendChild(icon);
+      li.appendChild(info);
+      li.appendChild(actions);
+      referenceLayerList.appendChild(li);
+    });
+  }
+
+  async function loadReferenceLayers() {
+    try {
+      const response = await fetch("/api/reference-layers");
+      const payload = await response.json().catch(() => []);
+      if (!response.ok) {
+        referenceLayersHint.textContent = "Could not load reference layers.";
+        return;
+      }
+      allReferenceLayers = Array.isArray(payload) ? payload : [];
+      renderReferenceLayers();
+    } catch {
+      referenceLayersHint.textContent = "Could not load reference layers.";
+    }
   }
 
   function renderDownloads() {
@@ -218,6 +381,13 @@
 
     pageEyebrow.textContent = meta.eyebrow;
     pageTitle.textContent = meta.title;
+
+    if (workspaceEl) {
+      workspaceEl.classList.toggle("is-gfframe", name === "gfframe");
+    }
+    if (name === "gfframe" && window.GfFrame) {
+      window.GfFrame.activate();
+    }
   }
 
   function formatStatLabel(key) {
@@ -489,7 +659,12 @@
         logs: payload.logs || "",
         raster: files.map((f) => f.name).join(", "),
         artifacts: payload.artifacts || [],
+        reference_layers: payload.reference_layers || [],
       };
+
+      (payload.reference_layers || []).forEach((layer) => {
+        if (layer.id) extraMapLayerIds.add(layer.id);
+      });
 
       chatMessages = [
         { role: "user", text: question },
@@ -615,6 +790,7 @@
     if (!mapImage.classList.contains("hidden")) fitMapToViewport();
   });
 
+  loadReferenceLayers();
   renderDashboard();
   showPage("ask");
 })();

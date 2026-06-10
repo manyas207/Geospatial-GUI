@@ -14,6 +14,10 @@ def _choose_cmap(path: Path, model: str) -> str:
     name = path.name.lower()
     if model == "obia" or "classified" in name or "segment" in name:
         return "tab20"
+    if model == "population" or any(t in name for t in ("pop", "density", "census", "grid")):
+        return "YlOrRd"
+    if model == "reference":
+        return "viridis"
     return "inferno"
 
 

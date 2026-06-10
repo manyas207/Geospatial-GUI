@@ -1,10 +1,27 @@
 """Launch the Geospatial Dashboard API and web UI."""
 
+import os
 from pathlib import Path
 
 import uvicorn
 
 PROJECT_ROOT = Path(__file__).resolve().parent
+
+
+def load_dotenv() -> None:
+    """Load KEY=VALUE lines from .env into os.environ (does not override existing vars)."""
+    env_path = PROJECT_ROOT / ".env"
+    if not env_path.exists():
+        return
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
 WEB_DIR = PROJECT_ROOT / "web"
 HOST = "127.0.0.1"
 PORT = 8765
@@ -25,6 +42,7 @@ def verify_ui_files() -> None:
 
 
 def main() -> None:
+    load_dotenv()
     verify_ui_files()
 
     url = f"http://{HOST}:{PORT}/"

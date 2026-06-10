@@ -48,6 +48,7 @@ def answer_about_dashboard(question: str, context: dict) -> str:
             "stats": context.get("stats"),
             "logs": (context.get("logs") or "")[:4000],  # cap prompt size for the LLM
             "raster": context.get("raster"),
+            "reference_layers": context.get("reference_layers") or [],
         },
         indent=2,
     )

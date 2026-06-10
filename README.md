@@ -15,7 +15,11 @@ Open http://127.0.0.1:8765/
 
 **Workflow:** upload a raster and ask a question on **Ask** → explore the output on an interactive pan/zoom map on **Dashboard**, with metrics and downloads below → ask follow-up questions in the conversation panel (answered by Ollama using the dashboard context).
 
+**Heat & Equity** tab: 11-city GUI Frame with live API layers per city — Census Geocoder → ACS demographics (requires `CENSUS_API_KEY`) → tract boundaries (Census shapefile download, cached) → server-rendered choropleth PNG maps + WorldPop preview. Pan/zoom on the map like the Dashboard (no Leaflet); LLM Q&A via Ollama.
+
 Natural-language routing uses your local Ollama server (`OLLAMA_BASE_URL`, default `http://127.0.0.1:11434`). If Ollama is not running, keyword fallback is used instead. Copy `.env.example` to `.env` to change the model name.
+
+**Gridded population / reference layers:** place GeoTIFFs in a folder and set `REFERENCE_DATA_DIR` (defaults to `Desktop\Gridded Population Data` if present). Layers appear on the **Dashboard** and are auto-added to the map when they overlap an LST/OBIA result.
 
 ### Models
 

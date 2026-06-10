@@ -10,7 +10,7 @@
 
     <title>Geospatial Dashboard</title>
 
-    <link rel="stylesheet" href="app.css?v=9" />
+    <link rel="stylesheet" href="app.css?v=12" />
 
   </head>
 
@@ -40,15 +40,21 @@
 
           </button>
 
+          <button type="button" class="nav-btn" data-page="gfframe">
+
+            <span class="nav-label">Heat &amp; Equity</span>
+
+          </button>
+
         </div>
 
-        <p class="sidebar-foot">Ask → analyze → explore results</p>
+        <p class="sidebar-foot">Ask → analyze → explore · LST cities</p>
 
       </nav>
 
 
 
-      <div class="workspace">
+      <div class="workspace" id="workspace">
 
         <header class="topbar">
 
@@ -145,6 +151,18 @@
               <p>No dashboard yet. Upload a raster and ask a question on the <strong>Ask</strong> page.</p>
 
               <button type="button" class="run-btn run-btn-secondary" data-goto="ask">Go to Ask</button>
+
+            </div>
+
+            <div class="reference-panel card" id="referencePanel">
+
+              <h3 class="card-title">Gridded population &amp; reference data</h3>
+
+              <p class="reference-hint muted" id="referenceLayersHint">
+                Loading reference layers…
+              </p>
+
+              <ul class="reference-layer-list" id="referenceLayerList"></ul>
 
             </div>
 
@@ -265,13 +283,247 @@
 
           </section>
 
+
+
+          <section id="page-gfframe" class="page page-gfframe">
+
+            <div class="gf-app">
+
+              <header class="gf-topbar">
+
+                <div class="gf-topbar-icon" aria-hidden="true">🌡</div>
+
+                <div>
+
+                  <div class="gf-topbar-title">Urban Heat &amp; Equity GUI Frame</div>
+
+                  <div class="gf-topbar-subtitle muted">LST + Population + Census Analysis Platform</div>
+
+                </div>
+
+                <span class="gf-badge">11 cities</span>
+
+                <span class="gf-badge gf-badge-demo">DEMO</span>
+
+                <button type="button" class="gf-export-btn" id="gfExportBtn">Export report</button>
+
+              </header>
+
+
+
+              <div class="gf-main">
+
+                <aside class="gf-sidebar">
+
+                  <div class="gf-sidebar-section">
+
+                    <div class="gf-sidebar-label">11 cities</div>
+
+                    <div id="gfCityList"></div>
+
+                  </div>
+
+                  <div class="gf-sidebar-section">
+
+                    <div class="gf-sidebar-label">Key queries</div>
+
+                    <button type="button" class="gf-action-btn gf-action-highlight" data-gf-prompt="Which city had the hottest month overall across all 11 cities, and what is the peak LST value?">Hottest month, all cities</button>
+
+                    <button type="button" class="gf-action-btn gf-action-highlight" data-gf-prompt="Show the hottest month for each of the 11 cities with average LST values">Hottest month per city</button>
+
+                    <button type="button" class="gf-action-btn gf-action-equity" data-gf-prompt="Which low-income census tracts across all 11 cities have the highest LST exposure? Cross-reference with income below $40k">Low-income + high LST</button>
+
+                    <button type="button" class="gf-action-btn gf-action-equity" data-gf-prompt="Which ethnic community suffers the most heat exposure across all 11 cities? Rank by average LST in majority-minority census tracts">Ethnic community heat burden</button>
+
+                    <button type="button" class="gf-action-btn" data-gf-prompt="Compare population density vs LST for all 11 cities — which city shows the strongest urban heat island effect?">Population density vs LST</button>
+
+                    <button type="button" class="gf-action-btn" data-gf-prompt="Generate a monthly LST trend chart for all 11 cities showing temperature variation across all 12 months">Monthly LST trends</button>
+
+                  </div>
+
+                  <div class="gf-sidebar-section gf-sidebar-section-last">
+
+                    <div class="gf-sidebar-label">Map layers</div>
+
+                    <div class="gf-layer-toggle" data-gf-layer="lst"><span>LST heatmap</span><div class="gf-toggle" role="switch" aria-checked="false"></div></div>
+
+                    <div class="gf-layer-toggle" data-gf-layer="tracts"><span>Census tracts</span><div class="gf-toggle on" role="switch" aria-checked="true"></div></div>
+
+                    <div class="gf-layer-toggle" data-gf-layer="density"><span>Population density</span><div class="gf-toggle on" role="switch" aria-checked="true"></div></div>
+
+                    <div class="gf-layer-toggle" data-gf-layer="income"><span>Income overlay</span><div class="gf-toggle" role="switch" aria-checked="false"></div></div>
+
+                    <div class="gf-layer-toggle" data-gf-layer="ethnicity"><span>Ethnicity overlay</span><div class="gf-toggle" role="switch" aria-checked="false"></div></div>
+
+                    <div class="gf-layer-toggle" data-gf-layer="worldpop"><span>Gridded pop. (WorldPop)</span><div class="gf-toggle" role="switch" aria-checked="false"></div></div>
+
+                  </div>
+
+                </aside>
+
+
+
+                <div class="gf-center">
+
+                  <div class="gf-map-area" id="gfMapArea">
+
+                    <div class="gf-map-viewport" id="gfMapViewport">
+
+                      <img id="gfMapImage" class="gf-map-image hidden" alt="Census tract map layer" draggable="false" />
+
+                      <p class="gf-map-empty" id="gfMapEmpty">Select a city to load census &amp; population map layers…</p>
+
+                    </div>
+
+                    <p class="gf-map-loading" id="gfMapLoading" hidden>Loading city data…</p>
+
+                    <div class="gf-map-overlay-label" id="gfMapOverlay"></div>
+
+                    <div class="gf-legend">
+
+                      <div class="gf-legend-bar">
+
+                        <div class="gf-legend-cell" style="background:#3d7ea6"></div>
+
+                        <div class="gf-legend-cell" style="background:#74add1"></div>
+
+                        <div class="gf-legend-cell" style="background:#abd9e9"></div>
+
+                        <div class="gf-legend-cell" style="background:#f3c89b"></div>
+
+                        <div class="gf-legend-cell" style="background:#e07b32"></div>
+
+                        <div class="gf-legend-cell" style="background:#c45a1a"></div>
+
+                        <div class="gf-legend-cell" style="background:#9b2226"></div>
+
+                      </div>
+
+                      <div class="gf-legend-labels" id="gfLegendLabels"><span>Low</span><span id="gfLegendTitle">Density</span><span>High</span></div>
+
+                    </div>
+
+                    <div class="gf-map-controls">
+
+                      <button type="button" class="gf-map-ctrl-btn" id="gfZoomIn" title="Zoom in">+</button>
+
+                      <button type="button" class="gf-map-ctrl-btn" id="gfZoomOut" title="Zoom out">−</button>
+
+                      <button type="button" class="gf-map-ctrl-btn" id="gfZoomReset" title="Fit to view">Fit</button>
+
+                      <button type="button" class="gf-map-ctrl-btn" id="gfAllCitiesBtn" title="All cities">◎</button>
+
+                    </div>
+
+                  </div>
+
+
+
+                  <div class="gf-stats-row">
+
+                    <div class="gf-stat-card">
+
+                      <div class="gf-stat-label">County</div>
+
+                      <div class="gf-stat-val gf-stat-sm" id="gfStatCounty">—</div>
+
+                    </div>
+
+                    <div class="gf-stat-card">
+
+                      <div class="gf-stat-label">Census tracts</div>
+
+                      <div class="gf-stat-val" id="gfStatTracts">—</div>
+
+                    </div>
+
+                    <div class="gf-stat-card">
+
+                      <div class="gf-stat-label">Population</div>
+
+                      <div class="gf-stat-val gf-stat-sm" id="gfStatPopulation">—</div>
+
+                    </div>
+
+                    <div class="gf-stat-card">
+
+                      <div class="gf-stat-label">Median income</div>
+
+                      <div class="gf-stat-val gf-stat-sm" id="gfStatIncome">—</div>
+
+                    </div>
+
+                    <div class="gf-stat-card">
+
+                      <div class="gf-stat-label">Avg. density</div>
+
+                      <div class="gf-stat-val gf-stat-sm" id="gfStatDensity">—</div>
+
+                    </div>
+
+                  </div>
+
+                </div>
+
+
+
+                <aside class="gf-right-panel">
+
+                  <div class="gf-panel-tab-row">
+
+                    <button type="button" class="gf-panel-tab active" id="gfTabChat" data-gf-tab="chat">Query</button>
+
+                    <button type="button" class="gf-panel-tab" id="gfTabCharts" data-gf-tab="charts">Charts</button>
+
+                    <button type="button" class="gf-panel-tab" id="gfTabLayers" data-gf-tab="layers">All cities</button>
+
+                  </div>
+
+                  <div class="gf-panel-content" id="gfPanelChat"></div>
+
+                  <div class="gf-panel-content" id="gfPanelCharts" hidden>
+
+                    <div class="gf-panel-heading">Peak LST by city (°C)</div>
+
+                    <div class="gf-chart-bar-wrap" id="gfBarChart"></div>
+
+                  </div>
+
+                  <div class="gf-panel-content" id="gfPanelLayers" hidden>
+
+                    <div class="gf-panel-heading">All 11 cities — click to focus</div>
+
+                    <div class="gf-city-grid" id="gfCityGrid"></div>
+
+                  </div>
+
+                  <div class="gf-query-input-wrap">
+
+                    <label class="sr-only" for="gfQueryInput">Ask about LST or equity</label>
+
+                    <textarea class="gf-query-input" id="gfQueryInput" rows="2" placeholder="Ask a question about any city, month, population group…"></textarea>
+
+                    <button type="button" class="gf-send-btn" id="gfSendBtn">Ask LLM</button>
+
+                  </div>
+
+                </aside>
+
+              </div>
+
+            </div>
+
+          </section>
+
         </main>
 
       </div>
 
     </div>
 
-    <script src="app.js?v=9"></script>
+    <script src="app.js?v=12"></script>
+
+    <script src="gf_frame.js?v=3"></script>
 
   </body>
 
