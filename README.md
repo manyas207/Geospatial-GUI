@@ -1,27 +1,73 @@
 # Geospatial GUI
 
-## Run locally
+Terminal-launched web dashboard for geospatial analysis: upload rasters and run **LST** or **OBIA** pipelines, explore results on an interactive map, and use the **Heat & Equity** GUI Frame with live census and population layers.
+
+## Quick start
 
 Work in **Geospatial-GUI-1** (this folder), not `Desktop\Geospatial-GUI` — that older copy can hold port 8080 with stale files.
 
-Install dependencies and start [Ollama](https://ollama.com/) with a model (e.g. `ollama pull llama3.2`).
-
 ```bash
 pip install -r requirements.txt
+copy .env.example .env    # set CENSUS_API_KEY for Heat & Equity
 python serve.py
 ```
 
-Open http://127.0.0.1:8765/
+Open **http://127.0.0.1:8765/**
 
-**Workflow:** upload a raster and ask a question on **Ask** → explore the output on an interactive pan/zoom map on **Dashboard**, with metrics and downloads below → ask follow-up questions in the conversation panel (answered by Ollama using the dashboard context).
+Optional: install [Ollama](https://ollama.com/) and pull a model for natural-language routing and chat:
 
-**Heat & Equity** tab: 11-city GUI Frame with live API layers per city — Census Geocoder → ACS demographics (requires `CENSUS_API_KEY`) → tract boundaries (Census shapefile download, cached) → server-rendered choropleth PNG maps + WorldPop preview. Pan/zoom on the map like the Dashboard (no Leaflet); LLM Q&A via Ollama.
+```bash
+ollama pull llama3.2
+```
 
-Natural-language routing uses your local Ollama server (`OLLAMA_BASE_URL`, default `http://127.0.0.1:11434`). If Ollama is not running, keyword fallback is used instead. Copy `.env.example` to `.env` to change the model name.
+## Application tabs
 
-**Gridded population / reference layers:** place GeoTIFFs in a folder and set `REFERENCE_DATA_DIR` (defaults to `Desktop\Gridded Population Data` if present). Layers appear on the **Dashboard** and are auto-added to the map when they overlap an LST/OBIA result.
+| Tab | What it does |
+|-----|----------------|
+| **Ask** | Upload GeoTIFFs + question → LST or OBIA analysis |
+| **Dashboard** | Map, metrics, downloads, reference layers, follow-up chat |
+| **Heat & Equity** | 11-city GF demo with live Census / WorldPop maps |
 
-### Models
+**Ask → Dashboard workflow:** upload a raster and ask a question on **Ask** → explore the output on an interactive pan/zoom map on **Dashboard**, with metrics and downloads below → ask follow-up questions in the conversation panel (answered by Ollama using the dashboard context).
+
+## Configuration
+
+Copy `.env.example` to `.env`. Key variables:
+
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `CENSUS_API_KEY` | For Heat & Equity | [Free Census API key](https://api.census.gov/data/key_signup.html) |
+| `OLLAMA_BASE_URL` | No | Default `http://127.0.0.1:11434` |
+| `OLLAMA_MODEL` | No | Default `llama3.2` |
+| `REFERENCE_DATA_DIR` | No | Folder of reference GeoTIFFs for Dashboard |
+
+See [docs/DATA.md](docs/DATA.md) for full details.
+
+## Project layout
+
+```
+Geospatial-GUI-1/
+├── serve.py              # Entry point: python serve.py
+├── backend/              # FastAPI routes and API clients
+├── models/               # LST and OBIA pipelines
+├── web/                  # Static frontend (HTML, CSS, JS)
+├── data/                 # Uploads and caches (gitignored)
+└── docs/                 # Architecture, API, data, demo guides
+```
+
+## Documentation
+
+| Doc | Description |
+|-----|-------------|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System design and module map |
+| [docs/API.md](docs/API.md) | REST endpoint reference |
+| [docs/DATA.md](docs/DATA.md) | Data folders, caches, external APIs |
+| [docs/DEMO.md](docs/DEMO.md) | Stakeholder demo walkthrough |
+| [CHANGELOG.md](CHANGELOG.md) | Release notes |
+
+Interactive API docs: http://127.0.0.1:8765/docs
+
+## Analysis models
 
 - **LST** (`models/lst_core.py`): Upload Landsat `ST_B10`, `SR_B4`, and `SR_B5` together in one request, or a 3-band stack (thermal, red, NIR).
 - **OBIA** (`models/obia_core.py`): Upload a multi-band GeoTIFF plus training shapefile components (`.shp`, `.shx`, `.dbf`, and optionally `.prj`) in the same request. Without a valid shapefile, only segmentation runs. Set `OBIA_SAMPLES_PATH` to point at a fixed shapefile if needed.
