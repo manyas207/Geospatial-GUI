@@ -10,7 +10,7 @@
 
     <title>Geospatial Dashboard</title>
 
-    <link rel="stylesheet" href="app.css?v=17" />
+    <link rel="stylesheet" href="app.css?v=18" />
 
     <link rel="stylesheet" href="vendor/maplibre-gl/maplibre-gl.css" />
 
@@ -80,7 +80,7 @@
 
             <p class="page-lede" id="askLede">
 
-              Upload Landsat GeoTIFFs per city to build your LST portfolio. After the first city completes processing, you are taken to the Heat &amp; Equity dashboard automatically.
+              Choose an analysis model, upload inputs per city, and build your portfolio. After the first city completes processing, you are taken to the dashboard automatically.
 
             </p>
 
@@ -88,9 +88,14 @@
 
               <article class="card">
 
-                <h3 class="card-title">Upload LST for a city</h3>
+                <h3 class="card-title" id="askCardTitle">Run analysis for a city</h3>
 
-                <p class="muted ask-project-hint">Add Landsat bands per city (ST_B10, SR_B4, SR_B5). Repeat for each city in your portfolio.</p>
+                <p class="muted ask-project-hint" id="askModelHint">Select a model and add the required input files per city.</p>
+
+                <label class="field">
+                  <span class="field-label">Analysis model</span>
+                  <select class="ask-project-select" id="askModelSelect" aria-label="Analysis model"></select>
+                </label>
 
                 <label class="field">
                   <span class="field-label">City address</span>
@@ -100,8 +105,8 @@
                 <div class="file-upload">
                   <input id="askProjectFiles" type="file" accept=".tif,.tiff,.geotiff,.gtiff" multiple hidden />
                   <div class="file-drop" id="askProjectFileDrop">
-                    <p class="file-drop-title">Landsat GeoTIFFs</p>
-                    <p class="file-drop-hint" id="askProjectFileHint">ST_B10, SR_B4, SR_B5</p>
+                    <p class="file-drop-title" id="askProjectFileTitle">Input files</p>
+                    <p class="file-drop-hint" id="askProjectFileHint">Loading models…</p>
                     <button type="button" class="file-browse-btn" id="askProjectFileBrowse">Add files</button>
                   </div>
                   <ul class="file-list" id="askProjectFileList" hidden></ul>
@@ -110,7 +115,7 @@
 
                 <button type="button" class="run-btn run-btn-secondary" id="askAddCity">Add city to project</button>
 
-                <button type="button" class="run-btn" id="askRunCityLst">Run LST for city</button>
+                <button type="button" class="run-btn" id="askRunCityLst">Run analysis for city</button>
 
               </article>
 
@@ -118,7 +123,7 @@
 
                 <h3 class="card-title">City portfolio</h3>
 
-                <p class="muted ask-project-hint" id="askProjectStatus">No cities yet. Pick a city, upload bands, and run LST.</p>
+                <p class="muted ask-project-hint" id="askProjectStatus">No cities yet. Pick a model, add a city, upload files, and run analysis.</p>
 
                 <ul class="ask-project-city-list" id="askProjectCityList"></ul>
 
@@ -144,9 +149,9 @@
 
                 <div>
 
-                  <div class="gf-topbar-title">Urban Heat &amp; Equity GUI Frame</div>
+                  <div class="gf-topbar-title" id="gfTopbarTitle">Urban Heat &amp; Equity GUI Frame</div>
 
-                  <div class="gf-topbar-subtitle muted">LST + Population + Census Analysis Platform</div>
+                  <div class="gf-topbar-subtitle muted" id="gfTopbarSubtitle">LST + Population + Census Analysis Platform</div>
 
                 </div>
 
@@ -198,7 +203,7 @@
 
                     <div class="gf-sidebar-label">Map layers</div>
 
-                    <div class="gf-layer-toggle" data-gf-layer="lst"><span>LST heatmap</span><div class="gf-toggle" role="switch" aria-checked="false"></div></div>
+                    <div class="gf-layer-toggle" data-gf-layer="lst" id="gfLayerAnalysis"><span id="gfLayerAnalysisLabel">LST heatmap</span><div class="gf-toggle" role="switch" aria-checked="false"></div></div>
 
                     <div class="gf-layer-toggle" data-gf-layer="tracts"><span>Census tracts</span><div class="gf-toggle on" role="switch" aria-checked="true"></div></div>
 
@@ -374,11 +379,13 @@
 
     </div>
 
-    <script src="app.js?v=20"></script>
+    <script src="dashboard_adapter.js?v=1"></script>
+
+    <script src="app.js?v=21"></script>
 
     <script src="vendor/maplibre-gl/maplibre-gl.js"></script>
 
-    <script src="gf_frame.js?v=14"></script>
+    <script src="gf_frame.js?v=15"></script>
 
   </body>
 

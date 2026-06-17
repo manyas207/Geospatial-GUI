@@ -28,15 +28,19 @@ Stakeholder-friendly script for presenting the Geospatial GUI locally.
 
    Open **http://127.0.0.1:8765/**
 
+   After code updates, restart `serve.py` and hard-refresh the browser (`Ctrl+Shift+R`).
+
 ## Ask → Heat & Equity (production)
 
 1. Open **Ask** (the only nav item until you have processed data).
-2. Enter a US city address in **City, ST** form (e.g. `Round Rock, TX`), add Landsat GeoTIFFs (`ST_B10`, `SR_B4`, `SR_B5`).
-3. Click **Add city to project**, then **Run LST for city**. You are **redirected automatically** to **Heat & Equity** when LST completes.
-4. Explore maps, charts, and chat. Use **Back to Ask** to upload another city.
-5. **New project** clears the portfolio and returns you to Ask.
+2. Select **Land Surface Temperature** in the **Analysis model** dropdown (only model today; list comes from `GET /api/models`).
+3. Enter a US city address in **City, ST** form (e.g. `Round Rock, TX`).
+4. Upload Landsat GeoTIFFs (`ST_B10`, `SR_B4`, `SR_B5`) — file hints update per model.
+5. Click **Add city to project**, then **Run LST for city**. You are **redirected automatically** to **Your project** when the run completes.
+6. Explore maps, charts, and chat. Use **Back to Ask** to upload another city.
+7. **New project** clears the portfolio and returns you to Ask (required to switch analysis models).
 
-**Talking points:** Real per-tract LST from your uploads, live Census ACS, cross-city comparison in chat when ≥2 cities are ready.
+**Talking points:** Pluggable model platform (LST first); real per-tract LST from uploads; live Census ACS; cross-city comparison in chat when ≥2 cities are ready.
 
 ## Demo mode (11 cities)
 
@@ -48,17 +52,19 @@ Stakeholder-friendly script for presenting the Geospatial GUI locally.
 
 | Symptom | Fix |
 |---------|-----|
-| Heat & Equity nav missing | Upload and run LST for at least one city on **Ask** first |
+| Heat & Equity nav missing | Run analysis for at least one city on **Ask** first |
+| Model dropdown empty | Restart `serve.py`; check `GET /api/models` in browser or `/docs` |
 | Could not geocode address | Use `City, ST` (e.g. `Round Rock, TX`); fix typos; include state for ambiguous names |
 | Chat says "Could not get an answer" | Hard-refresh the page; if it persists, check server logs for `422` on `/api/followup` |
 | Demographics show dashes | Set `CENSUS_API_KEY` in `.env` and restart `serve.py` |
-| Chat says Ollama unavailable | Start `ollama serve` or set `OLLAMA_ENABLED=false` (fallback stat summary is still returned) |
+| Chat says Ollama unavailable | Start `ollama serve` (fallback stat summary is still returned) |
 | "Too many chat requests" | Wait for the rate-limit window (see `CHAT_RATE_LIMIT_*` in `.env`) |
-| Project city stuck on `processing` | Check server logs; confirm GeoTIFF band names include `ST_B10` |
-| Wrong or stale UI | Hard-refresh after updates (`Ctrl+Shift+R`) |
+| Project city stuck on `processing` | Check server logs; confirm GeoTIFF band names include `ST_B10` for LST |
+| Cannot change analysis model | Click **New project** — model locks once cities are registered |
+| Wrong or stale UI | Hard-refresh after updates (`Ctrl+Shift+R`); restart `serve.py` after git pull |
 
 ## API reference
 
 Interactive docs: http://127.0.0.1:8765/docs
 
-See also [API.md](API.md) and [DATA.md](DATA.md).
+See also [API.md](API.md), [MODELS.md](MODELS.md), and [DATA.md](DATA.md).

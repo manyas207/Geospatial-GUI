@@ -2,6 +2,7 @@
  * Urban Heat & Equity GUI Frame — MapLibre vector maps from cached GeoPackages + tract chat queries.
  */
 (function () {
+  const adapter = window.DashboardAdapter;
   let demoCities = [];
   let demoMaxTemp = 1;
   let demoHottest = null;
@@ -20,6 +21,8 @@
   let appMode = "demo";
   let projectId = null;
   let projectData = null;
+  let projectModelId = "lst";
+  let adapterModelsPromise = null;
   let projectCityList = [];
   let demoPortfolioCache = {};
   let demoOverview = null;
@@ -51,14 +54,91 @@
   const demoBadgeEl = document.getElementById("gfDemoBadge");
   const projectBadgeEl = document.getElementById("gfProjectBadge");
   const cityCountBadgeEl = document.getElementById("gfCityCountBadge");
+  const layerAnalysisLabelEl = document.getElementById("gfLayerAnalysisLabel");
+  const topbarTitleEl = document.getElementById("gfTopbarTitle");
+  const topbarSubtitleEl = document.getElementById("gfTopbarSubtitle");
+
+  function ensureAdapterModels() {
+    if (!adapter) return Promise.resolve();
+    if (!adapterModelsPromise) adapterModelsPromise = adapter.fetchModels().catch(() => null);
+    return adapterModelsPromise;
+  }
+
+  function activeProjectModelId(city) {
+    return adapter?.resolveProjectModelId(projectData, city) || projectModelId || "lst";
+  }
+
+  function modelPresentation(modelId) {
+    return adapter?.getPresentation(modelId) || {
+      dashboard: "equity",
+      analysisLayerId: "lst",
+      choroplethField: "lst_mean_C",
+      legendLabel: "LST",
+      barChartLabelProject: "Mean LST (°C)",
+      barChartLabelDemo: "Peak LST (°C)",
+    };
+  }
+
+  function isEquityDashboard(modelId) {
+    return modelPresentation(modelId).dashboard === "equity";
+  }
+
+  function projectPrimaryMetric(city) {
+    if (!city) return null;
+    return adapter?.cityPrimaryValue(city, activeProjectModelId(city)) ?? null;
+  }
+
+  function applyDashboardShell(modelId) {
+    const pres = modelPresentation(modelId);
+    const spec = adapter?.getModelSpec(modelId);
+    const equity = pres.dashboard === "equity";
+    const gfApp = document.querySelector(".gf-app");
+    gfApp?.classList.toggle("gf-dashboard-equity", equity);
+    gfApp?.classList.toggle("gf-dashboard-raster", !equity);
+
+    if (layerAnalysisLabelEl) {
+      layerAnalysisLabelEl.textContent = `${pres.legendLabel || "Analysis"} heatmap`;
+    }
+
+    if (appMode === "project") {
+      if (topbarTitleEl) {
+        topbarTitleEl.textContent = equity
+          ? "Urban Heat & Equity GUI Frame"
+          : `${spec?.label || "Analysis"} Dashboard`;
+      }
+      if (topbarSubtitleEl) {
+        topbarSubtitleEl.textContent = equity
+          ? `${spec?.label || "Analysis"} + Population + Census`
+          : "Model output view";
+      }
+    }
+
+    document.querySelectorAll(".gf-action-equity").forEach((btn) => {
+      btn.hidden = appMode === "project" && !equity;
+    });
+    document.getElementById("gfLayerAnalysis")?.classList.toggle("hidden", appMode === "project" && !equity);
+  }
 
   function getCities() {
     return appMode === "project" ? projectCityList : demoCities;
   }
 
-  function projectLstMean(stats) {
-    if (!stats) return null;
-    return stats.mean_C ?? stats.tract_mean_lst_C ?? null;
+  function cityLstDisplay(city) {
+    if (appMode === "project") {
+      const v = projectPrimaryMetric(city);
+      return adapter?.formatPrimaryValueShort(v, activeProjectModelId(city)) ?? "—";
+    }
+    return city?.temp != null ? `${city.temp}°` : "—";
+  }
+
+  function barChartMax() {
+    if (appMode === "project") {
+      const vals = projectCityList
+        .map((c) => projectPrimaryMetric(c))
+        .filter((v) => v != null);
+      return vals.length ? Math.max(...vals) : 1;
+    }
+    return demoMaxTemp;
   }
 
   async function fillDemoTempsFromPortfolio(cities) {
@@ -118,22 +198,6 @@
     return demoCities;
   }
 
-  function cityLstDisplay(city) {
-    if (appMode === "project") {
-      const v = projectLstMean(city?.lst_stats);
-      return v != null ? `${v}°` : "—";
-    }
-    return city?.temp != null ? `${city.temp}°` : "—";
-  }
-
-  function barChartMax() {
-    if (appMode === "project") {
-      const vals = projectCityList.map((c) => projectLstMean(c.lst_stats)).filter((v) => v != null);
-      return vals.length ? Math.max(...vals) : 1;
-    }
-    return demoMaxTemp;
-  }
-
   function updateModeChrome() {
     const cities = getCities();
     if (demoBadgeEl) demoBadgeEl.hidden = appMode !== "demo";
@@ -170,8 +234,13 @@
       key,
       name: entry.name || entry.address,
       color: entry.color || "#3d7ea6",
-      temp: projectLstMean(entry.lst_stats),
-      lst_stats: entry.lst_stats || {},
+      model_id: entry.model_id || projectData.model_id || projectModelId,
+      temp: projectPrimaryMetric({
+        ...entry,
+        model_id: entry.model_id || projectData.model_id || projectModelId,
+      }),
+      run_stats: adapter?.cityRunStats(entry) || {},
+      lst_stats: entry.lst_stats || entry.run_stats || {},
       status: entry.status,
       address: entry.address,
       summary: entry.summary,
@@ -186,7 +255,10 @@
     const response = await fetch(`/api/projects/${projectId}`);
     if (!response.ok) throw new Error("Could not load project.");
     projectData = await response.json();
+    projectModelId = projectData.model_id || "lst";
+    await ensureAdapterModels();
     syncProjectCityList();
+    applyDashboardShell(projectModelId);
     updateModeChrome();
   }
 
@@ -278,21 +350,32 @@
 
   function activeLayerLabel() {
     const layerId = activeMapLayerId();
+    const city = getCities()[activeCityIndex];
+    const modelId = activeProjectModelId(city);
+    const pres = modelPresentation(modelId);
     if (layerId === "worldpop") return "WorldPop gridded population";
-    if (layerId === "lst") {
-      const city = getCities()[activeCityIndex];
-      if (appMode === "project" && city?.status === "ready") return "Land surface temperature";
-      return "LST (demo — density stand-in)";
+    if (layerId === pres.analysisLayerId || layerId === "lst") {
+      if (appMode === "project" && city?.status === "ready") return pres.analysisLayerLabel;
+      return `${pres.legendLabel} (demo — density stand-in)`;
     }
     return cityLayersData?.map_layers?.[layerId]?.label || "Map layer";
   }
 
   function activeChoroplethField() {
     const layerId = activeMapLayerId();
+    const city = getCities()[activeCityIndex];
+    const modelId = activeProjectModelId(city);
+    const pres = modelPresentation(modelId);
     if (layerId === "worldpop") return null;
-    if (layerId === "lst") {
-      const city = getCities()[activeCityIndex];
-      if (appMode === "project" && city?.status === "ready") return "lst_mean_C";
+    if (layerId === pres.analysisLayerId || layerId === "lst") {
+      if (appMode === "project" && city?.status === "ready") {
+        return (
+          adapter?.choroplethField(modelId, layerId, appMode, city) ||
+          pres.choroplethField ||
+          city?.vector_layer?.fields?.find((f) => f === pres.choroplethField) ||
+          pres.choroplethField
+        );
+      }
       return LAYER_FIELDS.density;
     }
     return LAYER_FIELDS[layerId] ?? cityLayersData?.map_layers?.[layerId]?.field ?? null;
@@ -300,15 +383,19 @@
 
   function updateLegend() {
     if (!legendTitleEl) return;
+    const city = getCities()[activeCityIndex];
+    const pres = modelPresentation(activeProjectModelId(city));
     const labels = {
       density: "Density",
       income: "Income",
       ethnicity: "Hispanic %",
       tracts: "Tracts",
       worldpop: "WorldPop",
-      lst: appMode === "project" ? "LST" : "LST demo",
+      lst: appMode === "project" ? pres.legendLabel : `${pres.legendLabel} demo`,
     };
-    legendTitleEl.textContent = labels[activeMapLayerId()] || "Map";
+    const layerId = activeMapLayerId();
+    legendTitleEl.textContent =
+      labels[layerId] || (layerId === pres.analysisLayerId ? pres.legendLabel : "Map");
   }
 
   function choroplethFillPaint(field) {
@@ -409,6 +496,8 @@
     const name = props.acs_name || props.NAME || props.GEOID || "Census tract";
     const field = activeChoroplethField();
     const layerLabel = activeLayerLabel();
+    const city = getCities()[activeCityIndex];
+    const pres = modelPresentation(activeProjectModelId(city));
 
     let metricHtml = "";
     if (field === "median_income_usd" && props.median_income_usd != null) {
@@ -417,8 +506,9 @@
       metricHtml = `<div class="gf-tract-popup-metric">${props.hispanic_pct}%</div><div class="gf-tract-popup-metric-label">${layerLabel}</div>`;
     } else if (field === "population_density_per_km2" && props.population_density_per_km2 != null) {
       metricHtml = `<div class="gf-tract-popup-metric">${formatNumber(props.population_density_per_km2)}/km²</div><div class="gf-tract-popup-metric-label">${layerLabel}</div>`;
-    } else if (field === "lst_mean_C" && props.lst_mean_C != null) {
-      metricHtml = `<div class="gf-tract-popup-metric">${props.lst_mean_C}°C</div><div class="gf-tract-popup-metric-label">${layerLabel}</div>`;
+    } else if (field && props[field] != null) {
+      const unit = field === "lst_mean_C" || pres.metricUnit === "°C" ? "°C" : "";
+      metricHtml = `<div class="gf-tract-popup-metric">${props[field]}${unit}</div><div class="gf-tract-popup-metric-label">${layerLabel}</div>`;
     }
 
     const rows = [
@@ -427,8 +517,17 @@
       ["Hispanic %", props.hispanic_pct != null ? `${props.hispanic_pct}%` : "—"],
       ["Black %", props.black_pct != null ? `${props.black_pct}%` : "—"],
       ["Density", props.population_density_per_km2 != null ? `${formatNumber(props.population_density_per_km2)}/km²` : "—"],
-      ["LST mean", props.lst_mean_C != null ? `${props.lst_mean_C}°C` : "—"],
     ];
+    if (pres.choroplethField && props[pres.choroplethField] != null) {
+      rows.push([
+        pres.tractDetailLabel || pres.legendLabel,
+        pres.metricUnit === "°C"
+          ? `${props[pres.choroplethField]}°C`
+          : String(props[pres.choroplethField]),
+      ]);
+    } else if (props.lst_mean_C != null) {
+      rows.push(["LST mean", `${props.lst_mean_C}°C`]);
+    }
     const dl = rows.map(([label, value]) => `<dt>${label}</dt><dd>${value}</dd>`).join("");
     return `
       <div class="gf-tract-popup-card">
@@ -660,7 +759,26 @@
 
     const layerId = activeMapLayerId();
     const city = getCities()[activeCityIndex];
+    const modelId = activeProjectModelId(city);
     const summary = cityLayersData.summary || {};
+
+    if (appMode === "project" && !isEquityDashboard(modelId)) {
+      if (mapOverlayEl) {
+        mapOverlayEl.innerHTML = `
+          <div class="gf-map-overlay-title">${city.name} · ${modelPresentation(modelId).legendLabel}</div>
+          <div class="gf-map-overlay-sub">Raster dashboard shell — map view for this model is not implemented yet.</div>
+        `;
+      }
+      if (mapEmptyEl) {
+        mapEmptyEl.textContent =
+          "This model uses a raster dashboard type. Full map view will be added when the model is integrated.";
+        mapEmptyEl.classList.remove("hidden");
+      }
+      mapContainerEl?.classList.add("hidden");
+      return;
+    }
+
+    if (mapEmptyEl) mapEmptyEl.classList.add("hidden");
 
     if (mapOverlayEl) {
       mapOverlayEl.innerHTML = `
@@ -731,6 +849,7 @@
 
     const ctx = {
       model: "equity",
+      analysis_model: appMode === "project" ? activeProjectModelId(city) : null,
       project_id: appMode === "project" ? projectId : null,
       demo_cities: demoCities,
       demo_overview: overview,
@@ -743,20 +862,21 @@
           ? `11-city urban heat and equity demo. Placeholder LST for all cities; live Census for the active city (${city?.name}). Use demo_cities and city_comparison for cross-city questions.`
           : cityLayersData
             ? `Census tract data for ${city.name} (${summary.county || ""}, ${summary.state || ""}).`
-            : "Multi-city LST project.",
+            : `Multi-city ${modelPresentation(activeProjectModelId(city)).chatAnalysisLabel || "analysis"} project.`,
       stats: {
         active_city: city?.name,
         ...summary,
       },
       logs: cityLayersData ? JSON.stringify(cityLayersData.sources || {}) : "",
-      raster: appMode === "project" ? city?.lst_stats?.geotiff || "" : "",
+      raster:
+        appMode === "project" ? (adapter?.cityRunStats(city).geotiff || city?.lst_stats?.geotiff || "") : "",
     };
     if (appMode === "demo") {
       if (city?.temp != null) ctx.stats.demo_lst_C = city.temp;
       if (overview?.peak_lst_C != null) ctx.stats.peak_lst_C = overview.peak_lst_C;
       if (overview?.hottest_city) ctx.stats.hottest_city = overview.hottest_city;
-    } else if (city?.lst_stats) {
-      Object.assign(ctx.stats, city.lst_stats);
+    } else if (appMode === "project") {
+      Object.assign(ctx.stats, adapter?.cityRunStats(city) || city?.lst_stats || {});
     }
     return ctx;
   }
@@ -895,16 +1015,24 @@
     barChartEl.innerHTML = "";
     const cities = getCities();
     const maxVal = barChartMax();
-    const label = appMode === "project" ? "Mean LST (°C)" : "Peak LST (°C)";
+    const modelId = appMode === "project" ? projectModelId : "lst";
+    const pres = modelPresentation(modelId);
+    const label = appMode === "project" ? pres.barChartLabelProject : pres.barChartLabelDemo;
     cities.forEach((city) => {
-      const val = appMode === "project" ? projectLstMean(city.lst_stats) : city.temp;
+      const val = appMode === "project" ? projectPrimaryMetric(city) : city.temp;
       const pct = val != null ? Math.round((val / maxVal) * 100) : 0;
+      const valLabel =
+        val != null
+          ? appMode === "project"
+            ? adapter?.formatPrimaryValueShort(val, activeProjectModelId(city))
+            : `${val}°`
+          : "—";
       const row = document.createElement("div");
       row.className = "gf-chart-row";
       row.innerHTML = `
         <span>${cityShort(city.name)}</span>
         <div class="gf-bar-track"><div class="gf-bar-fill" style="width:${pct}%;background:${city.color}"></div></div>
-        <span class="gf-bar-val">${val != null ? `${val}°` : "—"}</span>
+        <span class="gf-bar-val">${valLabel}</span>
       `;
       barChartEl.appendChild(row);
     });
@@ -919,10 +1047,11 @@
       const cell = document.createElement("button");
       cell.type = "button";
       cell.className = "gf-mini-city" + (index === activeCityIndex ? " active" : "");
-      const temp = appMode === "project" ? projectLstMean(city.lst_stats) : city.temp;
+      const temp = appMode === "project" ? projectPrimaryMetric(city) : city.temp;
+      const unit = appMode === "project" ? modelPresentation(activeProjectModelId(city)).metricUnit : "°C";
       cell.innerHTML = `
         <div class="gf-mini-city-name">${cityShort(city.name)}</div>
-        <div class="gf-mini-city-temp" style="color:${city.color}">${temp != null ? `${temp}°C` : "—"}</div>
+        <div class="gf-mini-city-temp" style="color:${city.color}">${temp != null ? `${temp}${unit}` : "—"}</div>
         <div class="gf-mini-city-state muted">${city.name.split(", ")[1] || ""}</div>
       `;
       cell.addEventListener("click", () => selectCity(index));
@@ -1083,6 +1212,8 @@
     }
 
     afterLayout(async () => {
+      await ensureAdapterModels();
+
       if (appMode === "demo") {
         try {
           await ensureDemoCities();

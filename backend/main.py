@@ -48,6 +48,8 @@ from backend.project import (
 
     run_city_lst_upload,
 
+    run_city_model_upload,
+
 )
 
 from backend.rate_limit import chat_max_question_length, chat_rate_limiter
@@ -62,6 +64,10 @@ from backend.schemas import (
 
     FollowupResponse,
 
+    ModelsListResponse,
+
+    ModelInfoSchema,
+
     ProjectCityRequest,
 
     ProjectCreateRequest,
@@ -71,6 +77,8 @@ from backend.schemas import (
 from backend.tract_query import query_tract_gpkg, query_tract_layer
 
 from backend.uploads import save_upload_files
+
+from models.registry import list_models_public
 
 
 
@@ -140,11 +148,39 @@ def _city_png_preview(token: str) -> FileResponse:
 
 
 
+@app.get("/api/models", response_model=ModelsListResponse)
+
+async def list_analysis_models() -> ModelsListResponse:
+
+    return ModelsListResponse(
+
+        models=[ModelInfoSchema(**item) for item in list_models_public()]
+
+    )
+
+
+
+
+
 @app.post("/api/projects")
 
 async def create_lst_project(body: ProjectCreateRequest) -> JSONResponse:
 
-    manifest = create_project(body.name, projects_dir=PROJECTS_DIR)
+    try:
+
+        manifest = create_project(
+
+            body.name,
+
+            projects_dir=PROJECTS_DIR,
+
+            model_id=body.model_id,
+
+        )
+
+    except ValueError as exc:
+
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return JSONResponse(content=manifest)
 
@@ -207,6 +243,60 @@ async def add_project_city(project_id: str, body: ProjectCityRequest) -> JSONRes
     except ValueError as exc:
 
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+
+
+
+@app.post("/api/projects/{project_id}/cities/{city_key}/run")
+
+async def upload_project_city_run(
+
+    project_id: str,
+
+    city_key: str,
+
+    model: str = "lst",
+
+    files: list[UploadFile] = File(...),
+
+) -> JSONResponse:
+
+    city_dir = PROJECTS_DIR / project_id / "cities" / city_key / "uploads"
+
+    try:
+
+        saved = await save_upload_files(files, city_dir)
+
+        result = run_city_model_upload(
+
+            project_id,
+
+            city_key,
+
+            saved,
+
+            model_id=model,
+
+            projects_dir=PROJECTS_DIR,
+
+            city_layers_cache=CITY_LAYERS_CACHE,
+
+        )
+
+        return JSONResponse(content=result)
+
+    except FileNotFoundError as exc:
+
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    except ValueError as exc:
+
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    except Exception as exc:
+
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 

@@ -1,6 +1,8 @@
 # Geospatial GUI
 
-Terminal-launched web dashboard for multi-city **land surface temperature (LST)** analysis and the **Heat & Equity** GUI Frame with live census and population layers.
+Terminal-launched web dashboard for **pluggable geospatial analysis models** (LST is the first), multi-city projects, and the **Heat & Equity** GUI Frame with live census and population layers.
+
+Users choose a model on **Ask**, upload inputs, run analysis, and explore results on an adapter-driven dashboard with optional LLM chat.
 
 ## Prerequisites
 
@@ -62,11 +64,13 @@ Open that URL in your browser. The API docs are at http://127.0.0.1:8765/docs
 
 | Tab | What to do |
 |-----|------------|
-| **Ask** | Enter a US city as `City, ST` (e.g. `Round Rock, TX`), upload Landsat bands (`ST_B10`, `SR_B4`, `SR_B5`), run LST |
+| **Ask** | Choose an **analysis model**, enter a US city as `City, ST`, upload required files, run analysis |
 | **Demo** | Open the 11-city Heat & Equity preview (no uploads needed) |
-| **Your project** | Appears after your first city finishes LST processing |
+| **Your project** | Appears after your first city finishes processing |
 
-**Ask → Your project:** upload GeoTIFFs on **Ask** → after LST completes you are taken to the dashboard with per-tract `lst_mean_C`.
+**Ask → Your project:** pick a model (LST today) → upload inputs → after the run completes you are taken to the dashboard with per-tract results (e.g. `lst_mean_C` for LST).
+
+Restart `python serve.py` after pulling code changes (`serve.py` does not auto-reload). Hard-refresh the browser (`Ctrl+Shift+R`) if the UI looks stale.
 
 ---
 
@@ -189,6 +193,8 @@ See [docs/DATA.md](docs/DATA.md) for full details.
 | Could not geocode address | Use `City, ST` (e.g. `Round Rock, TX`) |
 | Chat not using LLM | Check `curl <OLLAMA_BASE_URL>/api/tags`; verify firewall and `OLLAMA_HOST` on the Ollama machine |
 | Stale UI after git pull | Hard-refresh the browser (`Ctrl+Shift+R`) |
+| `GET /api/models` returns 404 | Restart `python serve.py` (old process still running) |
+| Cannot change model on Ask | Model is locked once a project has cities — click **New project** |
 
 ## Project layout
 
@@ -196,11 +202,14 @@ See [docs/DATA.md](docs/DATA.md) for full details.
 Geospatial-GUI-1/
 ├── serve.py              # Entry point: python serve.py
 ├── backend/              # FastAPI routes and API clients
-├── models/               # LST pipeline (and optional OBIA CLI in obia_core.py)
+├── models/               # Analysis model plugins (contract, registry, lst_model, …)
 ├── web/                  # Static frontend (HTML, CSS, JS)
-│   └── vendor/maplibre-gl/  # Self-hosted MapLibre GL JS
+│   ├── dashboard_adapter.js  # Model list + per-model dashboard presentation
+│   ├── app.js            # Ask tab (model picker, uploads)
+│   ├── gf_frame.js       # Heat & Equity dashboard
+│   └── vendor/maplibre-gl/
 ├── data/                 # Uploads and caches (gitignored)
-└── docs/                 # Architecture, API, data, demo guides
+└── docs/                 # Architecture, API, models, data, demo guides
 ```
 
 ## Documentation
@@ -208,6 +217,7 @@ Geospatial-GUI-1/
 | Doc | Description |
 |-----|-------------|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System design and module map |
+| [docs/MODELS.md](docs/MODELS.md) | Model plugin contract and lab onboarding |
 | [docs/API.md](docs/API.md) | REST endpoint reference |
 | [docs/DATA.md](docs/DATA.md) | Data folders, caches, external APIs |
 | [docs/DEMO.md](docs/DEMO.md) | Stakeholder demo walkthrough |
@@ -215,9 +225,13 @@ Geospatial-GUI-1/
 
 Interactive API docs: http://127.0.0.1:8765/docs
 
-## LST uploads
+## Analysis models
 
-Upload Landsat `ST_B10`, `SR_B4`, and `SR_B5` together for each city. The pipeline prefers the thermal band when present.
+Registered models are listed at `GET /api/models`. The Ask tab loads this list and calls `POST .../run?model={id}`.
+
+**LST** (`lst`) expects Landsat `ST_B10`, `SR_B4`, and `SR_B5` together for each city. The pipeline prefers the thermal band when present.
+
+To add a new lab model, see [docs/MODELS.md](docs/MODELS.md).
 
 Enter each city as **City, ST** on the Ask tab (e.g. `Round Rock, TX`). Geocoding uses Census, then OpenStreetMap Nominatim as a fallback.
 

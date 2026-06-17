@@ -7,11 +7,11 @@ Where data lives, how it flows in, and what gets cached.
 ```
 Geospatial-GUI-1/
 ├── data/
-│   ├── projects/{project_id}/   # Multi-city LST portfolios
-│   │   ├── manifest.json
+│   ├── projects/{project_id}/   # Multi-city analysis portfolios
+│   │   ├── manifest.json        # project model_id, city statuses
 │   │   └── cities/{city_key}/
-│   │       ├── uploads/         # Landsat GeoTIFFs
-│   │       ├── tracts.gpkg      # Census + lst_mean_C per tract
+│   │       ├── uploads/         # User input files (e.g. Landsat GeoTIFFs)
+│   │       ├── tracts.gpkg      # Census + model fields (e.g. lst_mean_C)
 │   │       └── tracts.geojson
 │   └── city_layers_cache/       # Heat & Equity cached downloads
 │       ├── tiger/               # State tract shapefiles (.zip)
@@ -20,10 +20,21 @@ Geospatial-GUI-1/
 │       ├── demo_snapshots/      # Cached demo city payloads
 │       └── maps/                # Optional choropleth PNGs
 ├── web/                         # Static frontend (not user data)
-└── models/                      # LST pipeline code (not user data)
+└── models/                      # Analysis model plugins (not user data)
 ```
 
 `data/` is gitignored. Do not commit large rasters or API keys.
+
+### Project manifest (`manifest.json`)
+
+| Field | Meaning |
+|-------|---------|
+| `model_id` | Default analysis model for the project (e.g. `lst`) |
+| `cities.{key}.status` | `pending` \| `processing` \| `ready` \| `error` |
+| `cities.{key}.model_id` | Model that processed this city |
+| `cities.{key}.run_stats` | Normalized pipeline output (stats, geotiff path, etc.) |
+| `cities.{key}.lst_stats` | Alias of `run_stats` for LST (backward compatibility) |
+| `cities.{key}.vector_fields` | Tract attributes exposed to map and chat |
 
 ---
 
@@ -33,13 +44,15 @@ Geospatial-GUI-1/
 
 | Item | Location | Format | Source |
 |------|----------|--------|--------|
-| Landsat bands | `data/projects/{id}/cities/{key}/uploads/` | GeoTIFF | User browser upload |
-| LST output | Pipeline temp under uploads | GeoTIFF | `models/lst_pipeline.py` |
-| Enriched tracts | `tracts.gpkg`, `tracts.geojson` | Vector | `backend/lst_zonal.py` |
+| Model inputs | `data/projects/{id}/cities/{key}/uploads/` | Per model (GeoTIFF for LST) | User browser upload |
+| Pipeline output | Temp under uploads | GeoTIFF | `models/*_model.py` via registry |
+| Enriched tracts | `tracts.gpkg`, `tracts.geojson` | Vector | Model `post_process` (e.g. `backend/lst_zonal.py`) |
 
-LST expects Landsat Collection 2 bands (`ST_B10`, `SR_B4`, `SR_B5`) in one request.
+The Ask tab loads required inputs from `GET /api/models` and runs `POST .../run?model={id}`.
 
-**City addresses on Ask:** enter a free-text US address in `City, ST` form (e.g. `Round Rock, TX`). The Ask tab no longer uses a preset-city dropdown.
+**LST** expects Landsat Collection 2 bands (`ST_B10`, `SR_B4`, `SR_B5`) in one request.
+
+**City addresses on Ask:** enter a free-text US address in `City, ST` form (e.g. `Round Rock, TX`). Pick the analysis model from the dropdown before uploading.
 
 ### Heat & Equity — live APIs
 

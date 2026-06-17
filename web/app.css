@@ -361,6 +361,11 @@ body {
   font-family: inherit;
 }
 
+.ask-project-select:disabled {
+  opacity: 0.72;
+  cursor: not-allowed;
+}
+
 .ask-project-city-list {
   list-style: none;
   margin: 0 0 16px;

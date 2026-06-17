@@ -2,6 +2,26 @@
 
 All notable changes to this project are documented here.
 
+## 2026-06-17 (model platform)
+
+### Added
+
+- **Model plugin contract** — `models/contract.py`, `models/lst_model.py`, `models/registry.py`; LST registered as model id `lst`
+- **`GET /api/models`** — lists registered models with `input_schema`, `dashboard`, `primary_metric`
+- **`POST /api/projects/{id}/cities/{key}/run?model=`** — generic model run (`/lst` kept as legacy alias)
+- **Project manifest** — `model_id`, `run_stats` per city (`lst_stats` retained as alias for LST)
+- **Ask tab model picker** — dropdown from API, dynamic file hints, runs via `/run?model=…` (`web/app.js`, `web/dashboard_adapter.js`)
+- **Dashboard adapter** — per-model charts, map choropleth, and chat context (`web/dashboard_adapter.js`, `web/gf_frame.js`)
+- **`analysis_model`** on `DashboardContext` for follow-up chat
+- **Docs** — [docs/MODELS.md](docs/MODELS.md) (lab onboarding guide)
+
+### Changed
+
+- **`backend/project.py`** — `run_city_model_upload()` orchestrates registry dispatch and post-process hooks
+- **`backend/router.py`** — `run_model()` dispatches by model id
+- **`POST /api/projects`** — optional `model_id` in request body (default `lst`)
+- **`backend/city_compare.py`** — reads `run_stats` with `lst_stats` fallback
+
 ## 2026-06-17
 
 ### Added

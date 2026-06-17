@@ -71,17 +71,21 @@ def _detect_metric(question: str) -> str | None:
     return None
 
 
+def _city_run_stats(city_entry: dict) -> dict:
+    return city_entry.get("run_stats") or city_entry.get("lst_stats") or {}
+
+
 def _city_metric_value(city_entry: dict, metric: str) -> Any:
-    lst_stats = city_entry.get("lst_stats") or {}
+    run_stats = _city_run_stats(city_entry)
     summary = city_entry.get("summary") or {}
 
     if metric == "mean_lst_C":
-        return lst_stats.get("mean_C") or lst_stats.get("tract_mean_lst_C")
+        return run_stats.get("mean_C") or run_stats.get("tract_mean_lst_C")
     if metric in summary:
         return summary.get(metric)
     if metric.startswith("avg_") and metric[4:] in summary:
         return summary.get(metric[4:])
-    return summary.get(metric) or lst_stats.get(metric)
+    return summary.get(metric) or run_stats.get(metric)
 
 
 def compare_cities(project_id: str, question: str, *, projects_dir) -> dict[str, Any]:

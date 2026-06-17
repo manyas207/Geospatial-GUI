@@ -1,13 +1,12 @@
 /**
- * Ask page: multi-city LST project uploads → Heat & Equity dashboard.
+ * Ask page: model selection, multi-city uploads → dashboard.
  */
 (function () {
+  const adapter = window.DashboardAdapter;
   const PAGE_META = {
     ask: { eyebrow: "Step 1", title: "Upload & build project" },
     gfframe: { eyebrow: "Heat & Equity", title: "Urban Heat & Equity" },
   };
-
-  const RASTER_RE = /\.(tif|tiff|geotiff|gtiff)$/i;
 
   const workspaceEl = document.getElementById("workspace");
   const navButtons = document.querySelectorAll(".nav-btn");
@@ -17,6 +16,9 @@
   const statusEl = document.getElementById("status");
   const navGfframe = document.getElementById("navGfframe");
 
+  const askModelSelect = document.getElementById("askModelSelect");
+  const askModelHint = document.getElementById("askModelHint");
+  const askCardTitle = document.getElementById("askCardTitle");
   const askCityCustom = document.getElementById("askCityCustom");
   const askProjectFilesInput = document.getElementById("askProjectFiles");
   const askProjectFileDrop = document.getElementById("askProjectFileDrop");
@@ -24,8 +26,9 @@
   const askProjectFileList = document.getElementById("askProjectFileList");
   const askProjectFileClear = document.getElementById("askProjectFileClear");
   const askProjectFileHint = document.getElementById("askProjectFileHint");
+  const askProjectFileTitle = document.getElementById("askProjectFileTitle");
   const askAddCityBtn = document.getElementById("askAddCity");
-  const askRunCityLstBtn = document.getElementById("askRunCityLst");
+  const askRunCityBtn = document.getElementById("askRunCityLst");
   const askProjectStatus = document.getElementById("askProjectStatus");
   const askProjectCityList = document.getElementById("askProjectCityList");
   const askNewProjectBtn = document.getElementById("askNewProject");
@@ -33,10 +36,8 @@
   let projectId = localStorage.getItem("gf_project_id") || null;
   let projectData = null;
   let projectCityFiles = [];
-
-  function isRaster(file) {
-    return RASTER_RE.test(file.name);
-  }
+  let selectedModelId = localStorage.getItem("gf_model_id") || "lst";
+  let modelsLoaded = false;
 
   function fileKey(file) {
     return `${file.name}|${file.size}|${file.lastModified}`;
@@ -57,6 +58,47 @@
     if (type) statusEl.classList.add(type);
   }
 
+  function selectedModel() {
+    return adapter?.getModelSpec(selectedModelId) || { id: selectedModelId, label: selectedModelId };
+  }
+
+  function presentation() {
+    return adapter?.getPresentation(selectedModelId) || { runVerb: "analysis", metricUnit: "°C" };
+  }
+
+  function projectHasCities() {
+    return Boolean(projectData?.cities && Object.keys(projectData.cities).length);
+  }
+
+  function syncModelSelectLock() {
+    if (!askModelSelect) return;
+    const locked = projectHasCities();
+    askModelSelect.disabled = locked;
+    if (locked && projectData?.model_id) {
+      selectedModelId = projectData.model_id;
+      askModelSelect.value = selectedModelId;
+    }
+  }
+
+  function updateAskModelUI() {
+    const pres = presentation();
+    const spec = selectedModel();
+    if (askCardTitle) askCardTitle.textContent = pres.cardTitle || `Run ${spec.label}`;
+    if (askModelHint) {
+      askModelHint.textContent = pres.portfolioHint || spec.description || "";
+    }
+    if (askRunCityBtn) {
+      askRunCityBtn.textContent = `Run ${pres.runVerb || spec.label} for city`;
+    }
+    if (askProjectFileTitle) {
+      askProjectFileTitle.textContent = adapter?.fileDropTitle(selectedModelId) || "Input files";
+    }
+    const accept = adapter?.inputAccept(selectedModelId) || ".tif,.tiff";
+    if (askProjectFilesInput) askProjectFilesInput.accept = accept;
+    updateProjectFileUI();
+    syncModelSelectLock();
+  }
+
   function hasReadyProject() {
     return Boolean(projectId && projectData && (projectData.ready_count || 0) > 0);
   }
@@ -70,7 +112,7 @@
     if (name === "gfframe") {
       const mode = gfMode || localStorage.getItem("gf_mode") || "demo";
       if (mode === "project" && !hasReadyProject()) {
-        setStatus("Upload LST for at least one city on Ask first", "is-error");
+        setStatus("Run analysis for at least one city on Ask first", "is-error");
         name = "ask";
       } else {
         localStorage.setItem("gf_mode", mode);
@@ -112,18 +154,22 @@
   window.AppShell = { showPage, hasReadyProject };
 
   function resolveCityAddress() {
-    const custom = (askCityCustom?.value || "").trim();
-    if (custom) return custom;
-    return "";
+    return (askCityCustom?.value || "").trim();
+  }
+
+  function isAcceptedFile(file) {
+    const accept = adapter?.inputAccept(selectedModelId) || "";
+    return adapter?.extensionMatchesAccept(file.name, accept) ?? true;
   }
 
   function updateProjectFileUI() {
     if (!askProjectFileList) return;
+    const defaultHint = adapter?.inputHint(selectedModelId) || "Upload required input files";
     if (!projectCityFiles.length) {
       askProjectFileList.hidden = true;
       askProjectFileList.innerHTML = "";
       askProjectFileClear?.classList.add("hidden");
-      if (askProjectFileHint) askProjectFileHint.textContent = "ST_B10, SR_B4, SR_B5";
+      if (askProjectFileHint) askProjectFileHint.textContent = defaultHint;
       return;
     }
     askProjectFileList.hidden = false;
@@ -150,9 +196,9 @@
   }
 
   function addProjectFiles(incoming) {
-    const valid = incoming.filter(isRaster);
+    const valid = incoming.filter(isAcceptedFile);
     if (!valid.length) {
-      setStatus("Include at least one GeoTIFF (.tif)", "is-error");
+      setStatus(`Include at least one accepted file (${adapter?.inputAccept(selectedModelId)})`, "is-error");
       return;
     }
     const existing = new Set(projectCityFiles.map((f) => fileKey(f)));
@@ -172,6 +218,9 @@
       const response = await fetch(`/api/projects/${projectId}`);
       if (response.ok) {
         projectData = await response.json();
+        if (projectData.model_id) selectedModelId = projectData.model_id;
+        localStorage.setItem("gf_model_id", selectedModelId);
+        syncModelSelectLock();
         return projectData;
       }
       projectId = null;
@@ -180,13 +229,18 @@
     const response = await fetch("/api/projects", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: "LST City Project" }),
+      body: JSON.stringify({
+        name: `${selectedModel().label} City Project`,
+        model_id: selectedModelId,
+      }),
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(parseError(payload) || "Could not create project.");
     projectData = payload;
     projectId = payload.id;
     localStorage.setItem("gf_project_id", projectId);
+    localStorage.setItem("gf_model_id", selectedModelId);
+    syncModelSelectLock();
     return projectData;
   }
 
@@ -194,10 +248,13 @@
     if (!askProjectCityList) return;
     askProjectCityList.innerHTML = "";
     const cities = projectData?.cities ? Object.entries(projectData.cities) : [];
+    const pres = presentation();
+    const modelId = projectData?.model_id || selectedModelId;
 
     if (!cities.length) {
       if (askProjectStatus) {
-        askProjectStatus.textContent = "No cities yet. Pick a city, upload bands, and run LST.";
+        askProjectStatus.textContent =
+          "No cities yet. Pick a model, add a city, upload files, and run analysis.";
       }
       updateNavVisibility();
       return;
@@ -208,7 +265,7 @@
       askProjectStatus.textContent =
         readyCount > 0
           ? `${readyCount} of ${cities.length} cities ready — dashboard unlocked. Add more cities anytime via Back to Ask.`
-          : `${cities.length} city(ies) registered — run LST to open the dashboard.`;
+          : `${cities.length} city(ies) registered — run ${pres.runVerb || "analysis"} to open the dashboard.`;
     }
 
     cities.forEach(([key, entry]) => {
@@ -222,11 +279,18 @@
       status.className = `ask-project-status ask-project-status-${entry.status || "pending"}`;
       status.textContent = entry.status || "pending";
       meta.appendChild(status);
-      if (entry.lst_stats?.mean_C != null) {
-        const lst = document.createElement("span");
-        lst.className = "ask-project-lst";
-        lst.textContent = `${entry.lst_stats.mean_C}°C mean`;
-        meta.appendChild(lst);
+      const metric = adapter?.cityPrimaryValue(entry, entry.model_id || modelId);
+      if (metric != null) {
+        const metricEl = document.createElement("span");
+        metricEl.className = "ask-project-lst";
+        metricEl.textContent = adapter?.formatPrimaryValue(metric, entry.model_id || modelId);
+        meta.appendChild(metricEl);
+      }
+      if (entry.model_id && entry.model_id !== modelId) {
+        const modelTag = document.createElement("span");
+        modelTag.className = "ask-project-lst";
+        modelTag.textContent = entry.model_id;
+        meta.appendChild(modelTag);
       }
       li.appendChild(name);
       li.appendChild(meta);
@@ -246,6 +310,12 @@
       const response = await fetch(`/api/projects/${projectId}`);
       if (!response.ok) throw new Error("Project not found");
       projectData = await response.json();
+      if (projectData.model_id) {
+        selectedModelId = projectData.model_id;
+        if (askModelSelect) askModelSelect.value = selectedModelId;
+        localStorage.setItem("gf_model_id", selectedModelId);
+      }
+      updateAskModelUI();
       renderAskPortfolio();
     } catch {
       projectId = null;
@@ -279,7 +349,7 @@
 
   function openGfDashboard() {
     if (!hasReadyProject()) {
-      setStatus("Upload LST for at least one city first", "is-error");
+      setStatus("Run analysis for at least one city first", "is-error");
       return;
     }
     localStorage.setItem("gf_project_id", projectId);
@@ -300,7 +370,8 @@
     try {
       await registerAskCity(address);
       renderAskPortfolio();
-      setStatus(`${address} added. Upload Landsat bands, then run LST.`, "is-ok");
+      const pres = presentation();
+      setStatus(`${address} added. Upload files, then run ${pres.runVerb || "analysis"}.`, "is-ok");
     } catch (error) {
       setStatus(error.message || "Could not add city", "is-error");
     } finally {
@@ -308,35 +379,36 @@
     }
   }
 
-  async function runAskCityLst() {
+  async function runAskCityModel() {
     const address = resolveCityAddress();
     if (!address) {
       setStatus("Enter a city address", "is-error");
       return;
     }
     if (!projectCityFiles.length) {
-      setStatus("Add Landsat GeoTIFFs for this city", "is-error");
+      setStatus(`Add input files for ${selectedModel().label}`, "is-error");
       return;
     }
 
-    let cityKey = cityKeyForAddress(address);
+    const cityKey = cityKeyForAddress(address);
     if (!cityKey) {
       setStatus("Add the city to your project first", "is-error");
       return;
     }
 
-    askRunCityLstBtn.disabled = true;
-    setStatus(`Running LST for ${address}…`, "");
+    const pres = presentation();
+    askRunCityBtn.disabled = true;
+    setStatus(`Running ${pres.runVerb || selectedModel().label} for ${address}…`, "");
 
     try {
       const form = new FormData();
       projectCityFiles.forEach((file) => form.append("files", file));
-      const response = await fetch(`/api/projects/${projectId}/cities/${cityKey}/lst`, {
-        method: "POST",
-        body: form,
-      });
+      const response = await fetch(
+        `/api/projects/${projectId}/cities/${cityKey}/run?model=${encodeURIComponent(selectedModelId)}`,
+        { method: "POST", body: form }
+      );
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(parseError(payload) || "LST upload failed.");
+      if (!response.ok) throw new Error(parseError(payload) || "Model run failed.");
 
       projectData = payload;
       projectCityFiles = [];
@@ -344,13 +416,13 @@
       if (askCityCustom) askCityCustom.value = "";
       renderAskPortfolio();
 
-      setStatus(`${address} LST complete — opening dashboard…`, "is-ok");
+      setStatus(`${address} complete — opening dashboard…`, "is-ok");
       openGfDashboard();
     } catch (error) {
-      setStatus(error.message || "LST failed", "is-error");
+      setStatus(error.message || "Analysis failed", "is-error");
       await loadAskProjectState();
     } finally {
-      askRunCityLstBtn.disabled = false;
+      askRunCityBtn.disabled = false;
     }
   }
 
@@ -360,10 +432,52 @@
     projectCityFiles = [];
     localStorage.removeItem("gf_project_id");
     localStorage.removeItem("gf_mode");
+    if (askModelSelect) askModelSelect.disabled = false;
     updateProjectFileUI();
     renderAskPortfolio();
-    setStatus("New project started — add a city and upload LST bands.", "is-ok");
+    setStatus("New project started — pick a model, add a city, and upload files.", "is-ok");
     showPage("ask");
+  }
+
+  function onModelChange() {
+    if (!askModelSelect) return;
+    const next = askModelSelect.value || "lst";
+    if (projectHasCities() && projectData?.model_id && next !== projectData.model_id) {
+      askModelSelect.value = projectData.model_id;
+      setStatus("Start a new project to switch analysis models.", "is-error");
+      return;
+    }
+    selectedModelId = next;
+    localStorage.setItem("gf_model_id", selectedModelId);
+    projectCityFiles = [];
+    if (askProjectFilesInput) askProjectFilesInput.value = "";
+    updateAskModelUI();
+  }
+
+  async function initModels() {
+    if (!adapter) {
+      setStatus("Dashboard adapter failed to load.", "is-error");
+      return;
+    }
+    try {
+      await adapter.fetchModels();
+      modelsLoaded = true;
+      if (!askModelSelect) return;
+      askModelSelect.innerHTML = "";
+      adapter.listModels().forEach((spec) => {
+        const option = document.createElement("option");
+        option.value = spec.id;
+        option.textContent = spec.label;
+        askModelSelect.appendChild(option);
+      });
+      if (!adapter.getModelSpec(selectedModelId)) {
+        selectedModelId = adapter.listModels()[0]?.id || "lst";
+      }
+      askModelSelect.value = selectedModelId;
+      updateAskModelUI();
+    } catch (error) {
+      setStatus(error.message || "Could not load models", "is-error");
+    }
   }
 
   navButtons.forEach((btn) => {
@@ -373,6 +487,8 @@
   document.querySelectorAll("[data-goto]").forEach((btn) => {
     btn.addEventListener("click", () => showPage(btn.dataset.goto));
   });
+
+  askModelSelect?.addEventListener("change", onModelChange);
 
   askProjectFileBrowse?.addEventListener("click", (event) => {
     event.stopPropagation();
@@ -407,16 +523,18 @@
   });
 
   askAddCityBtn?.addEventListener("click", () => addCityToProject());
-  askRunCityLstBtn?.addEventListener("click", () => runAskCityLst());
+  askRunCityBtn?.addEventListener("click", () => runAskCityModel());
   askNewProjectBtn?.addEventListener("click", () => resetAskProject());
 
-  loadAskProjectState().then(() => {
-    const lastPage = localStorage.getItem("gf_last_page");
-    const lastMode = localStorage.getItem("gf_mode") || "demo";
-    if (lastPage === "gfframe" && (lastMode === "demo" || hasReadyProject())) {
-      showPage("gfframe", lastMode);
-    } else {
-      showPage("ask");
-    }
-  });
+  initModels().then(() =>
+    loadAskProjectState().then(() => {
+      const lastPage = localStorage.getItem("gf_last_page");
+      const lastMode = localStorage.getItem("gf_mode") || "demo";
+      if (lastPage === "gfframe" && (lastMode === "demo" || hasReadyProject())) {
+        showPage("gfframe", lastMode);
+      } else {
+        showPage("ask");
+      }
+    })
+  );
 })();

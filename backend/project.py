@@ -1,4 +1,4 @@
-"""Multi-city LST project storage and orchestration."""
+"""Multi-city project storage and model-run orchestration."""
 
 from __future__ import annotations
 
@@ -9,22 +9,33 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from backend.city_layers import (
-    TRACT_LAYER,
-    VECTOR_QUERY_FIELDS,
-    city_cache_key,
-    load_city_layers,
-)
+from backend.city_layers import TRACT_LAYER
 from backend.geocode import geocode_address
 from backend.json_util import to_json_safe
-from backend.lst_zonal import enrich_tracts_with_lst
 from backend.presets import PRESET_CITIES
-from backend.raster_util import pick_primary_lst_raster
-from backend.router import run_lst_pipeline
+from backend.router import run_model
+from models.contract import RunContext
+from models.lst_model import LST_VECTOR_FIELDS
+from models.registry import get_model
 
 import geopandas as gpd
 
-LST_VECTOR_FIELDS = [*VECTOR_QUERY_FIELDS, "lst_mean_C", "lst_max_C"]
+DEFAULT_MODEL_ID = "lst"
+
+
+def _city_run_stats(city: dict) -> dict:
+    """Read per-city stats with backward compatibility for lst_stats."""
+    return dict(city.get("run_stats") or city.get("lst_stats") or {})
+
+
+def _city_vector_fields(city: dict, project_model_id: str | None = None) -> list[str]:
+    if city.get("vector_fields"):
+        return list(city["vector_fields"])
+    model_id = city.get("model_id") or project_model_id or DEFAULT_MODEL_ID
+    try:
+        return list(get_model(model_id).vector_fields)
+    except ValueError:
+        return list(LST_VECTOR_FIELDS)
 
 
 def _now_iso() -> str:
@@ -57,11 +68,20 @@ def _save_manifest(project_id: str, projects_dir: Path, manifest: dict) -> None:
     path.write_text(json.dumps(to_json_safe(manifest), indent=2), encoding="utf-8")
 
 
-def create_project(name: str | None, *, projects_dir: Path) -> dict:
+def create_project(
+    name: str | None,
+    *,
+    projects_dir: Path,
+    model_id: str | None = None,
+) -> dict:
+    resolved_model = (model_id or DEFAULT_MODEL_ID).strip().lower()
+    get_model(resolved_model)
+
     project_id = uuid.uuid4().hex
     manifest = {
         "id": project_id,
-        "name": (name or "LST City Project").strip(),
+        "name": (name or "Geospatial City Project").strip(),
+        "model_id": resolved_model,
         "created_at": _now_iso(),
         "updated_at": _now_iso(),
         "cities": {},
@@ -96,19 +116,27 @@ def _vector_urls(project_id: str, city_key: str) -> dict[str, str]:
 
 def _enrich_project_response(manifest: dict, projects_dir: Path) -> dict:
     project_id = manifest["id"]
+    project_model_id = manifest.get("model_id") or DEFAULT_MODEL_ID
     cities_out: dict[str, Any] = {}
 
     for key, entry in (manifest.get("cities") or {}).items():
         city = dict(entry)
+        run_stats = _city_run_stats(city)
+        if run_stats and not city.get("run_stats"):
+            city["run_stats"] = run_stats
+        if run_stats and not city.get("lst_stats"):
+            city["lst_stats"] = run_stats
+
         if city.get("status") == "ready":
             gpkg = _city_dir(project_id, key, projects_dir) / "tracts.gpkg"
             if gpkg.exists():
                 gdf = gpd.read_file(gpkg, layer=TRACT_LAYER)
                 west, south, east, north = gdf.total_bounds
+                fields = _city_vector_fields(city, project_model_id)
                 city["vector_layer"] = {
                     "token": f"{project_id}:{key}",
                     "bounds_wgs84": [float(west), float(south), float(east), float(north)],
-                    "fields": LST_VECTOR_FIELDS,
+                    "fields": fields,
                     "layer": TRACT_LAYER,
                     **_vector_urls(project_id, key),
                 }
@@ -164,14 +192,16 @@ def _preset_color(address: str) -> str:
     return "#3d7ea6"
 
 
-def run_city_lst_upload(
+def run_city_model_upload(
     project_id: str,
     city_key: str,
     saved_paths: list[Path],
     *,
+    model_id: str,
     projects_dir: Path,
     city_layers_cache: Path,
 ) -> dict:
+    spec = get_model(model_id)
     manifest = _load_manifest_raw(project_id, projects_dir)
     city = manifest.get("cities", {}).get(city_key)
     if not city:
@@ -184,63 +214,44 @@ def run_city_lst_upload(
 
     city["status"] = "processing"
     city["error"] = None
+    city["model_id"] = spec.id
+    manifest["model_id"] = spec.id
     manifest["updated_at"] = _now_iso()
     _save_manifest(project_id, projects_dir, manifest)
 
+    ctx = RunContext(
+        address=address,
+        city_dir=city_dir,
+        uploads_dir=uploads_dir,
+        city_layers_cache=city_layers_cache,
+    )
+
     try:
-        primary = pick_primary_lst_raster(saved_paths)
+        result = run_model(spec.id, saved_paths, ctx)
+        run_stats = to_json_safe(result.stats)
 
-        result = run_lst_pipeline(primary)
-        lst_stats = to_json_safe(result.get("stats") or {})
-        geotiff = lst_stats.get("geotiff")
-        if not geotiff:
-            raise ValueError("LST pipeline did not produce a GeoTIFF.")
+        post = spec.enrich(result, ctx)
+        if post.stats_updates:
+            run_stats = to_json_safe({**run_stats, **post.stats_updates})
 
-        layers = load_city_layers(address, cache_dir=city_layers_cache)
-        cache_key = city_cache_key(address)
-        geojson_path = city_layers_cache / "geojson" / f"{cache_key}.geojson"
-        base_gpkg = city_layers_cache / "gpkg" / f"{cache_key}.gpkg"
-        if geojson_path.exists():
-            gdf = gpd.read_file(geojson_path)
-        elif base_gpkg.exists():
-            gdf = gpd.read_file(base_gpkg, layer=TRACT_LAYER)
-        else:
-            raise FileNotFoundError("Census tract layer not found after city-layers load.")
-
-        out_gpkg = city_dir / "tracts.gpkg"
-        out_geojson = city_dir / "tracts.geojson"
-        enriched = enrich_tracts_with_lst(
-            gdf,
-            Path(geotiff),
-            out_gpkg=out_gpkg,
-            out_geojson=out_geojson,
-        )
-
-        west, south, east, north = enriched.total_bounds
-        tract_lst = enriched["lst_mean_C"].dropna()
-        if not tract_lst.empty:
-            tract_mean = round(float(tract_lst.mean()), 2)
-            lst_stats["tract_mean_lst_C"] = tract_mean
-            lst_stats["mean_C"] = tract_mean
-        else:
-            lst_stats["tract_zonal_warning"] = (
-                "No tract LST values — raster extent may not overlap census tracts "
-                "(check that Landsat tiles match the registered city)."
-            )
+        primary_name = result.primary_raster
+        if primary_name is None and spec.pick_primary is not None:
+            primary_name = spec.pick_primary_file(saved_paths).name
 
         city.update(
             {
                 "status": "ready",
-                "lst_stats": lst_stats,
-                "summary": layers.get("summary") or {},
-                "worldpop": layers.get("worldpop") or {},
-                "map_layers": layers.get("map_layers") or {},
-                "geocode": layers.get("geocode") or {},
-                "bounds_wgs84": [float(west), float(south), float(east), float(north)],
+                "model_id": spec.id,
+                "run_stats": run_stats,
+                "lst_stats": run_stats,
+                "vector_fields": post.vector_fields or list(spec.vector_fields),
                 "processed_at": _now_iso(),
-                "primary_raster": primary.name,
+                "primary_raster": primary_name,
+                **post.city_fields,
             }
         )
+        if result.logs:
+            city["run_logs"] = result.logs[:8000]
     except Exception as exc:
         city["status"] = "error"
         city["error"] = str(exc)
@@ -252,6 +263,24 @@ def run_city_lst_upload(
     _save_manifest(project_id, projects_dir, manifest)
     return get_project(project_id, projects_dir=projects_dir)
 
+
+def run_city_lst_upload(
+    project_id: str,
+    city_key: str,
+    saved_paths: list[Path],
+    *,
+    projects_dir: Path,
+    city_layers_cache: Path,
+) -> dict:
+    """Backward-compatible wrapper for LST uploads."""
+    return run_city_model_upload(
+        project_id,
+        city_key,
+        saved_paths,
+        model_id=DEFAULT_MODEL_ID,
+        projects_dir=projects_dir,
+        city_layers_cache=city_layers_cache,
+    )
 
 
 def get_city_geojson(project_id: str, city_key: str, *, projects_dir: Path) -> dict:
