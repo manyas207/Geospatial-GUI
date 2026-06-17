@@ -7,6 +7,8 @@ Install:
     pip install numpy pandas rasterio geopandas scikit-image scikit-learn
 """
 
+import os
+
 import numpy as np
 import pandas as pd
 import rasterio
@@ -23,10 +25,15 @@ from sklearn.model_selection import GroupKFold, cross_val_predict
 from datetime import datetime
 from pathlib import Path
 
-# ── EDIT THESE ───────────────────────────────────────────────────────
-RASTER   = r"C:\Users\BCC\Desktop\SA_TD_GTD\Teresina\Teresina_2015\HLS.L30.T23MQQ.2015218T125847.v2.0.B_stack_raster.tif"
-SAMPLES  = r"C:\Users\BCC\Desktop\SA_TD_GTD\Teresina\Teresina_2015\TD\TD_Teresina_2015.shp"
-OUT_DIR  = r"C:\Users\BCC\Desktop\OBIA_poc_Output"
+# CLI defaults — set OBIA_RASTER_PATH, OBIA_SAMPLES_PATH, OBIA_OUT_DIR in .env or pass args.
+def _env_path(name: str) -> str | None:
+    value = (os.environ.get(name) or "").strip()
+    return value or None
+
+
+RASTER = _env_path("OBIA_RASTER_PATH")
+SAMPLES = _env_path("OBIA_SAMPLES_PATH")
+OUT_DIR = _env_path("OBIA_OUT_DIR") or "obia_output"
 CLASS_FIELD = "macroclass"
 ROI_ID_FIELD = "roi_id"
 
@@ -428,8 +435,14 @@ def run_obia_pipeline(
     """Run full OBIA pipeline; returns stats dict and captured log text via caller."""
     raster_path = str(raster_path)
     out_dir = str(out_dir or OUT_DIR)
-    samples_path = samples_path or SAMPLES
+    samples_path = samples_path or SAMPLES or _env_path("OBIA_SAMPLES_PATH")
     n_segments = n_segments if n_segments is not None else N_SEGMENTS
+
+    if not samples_path:
+        raise ValueError(
+            "Training shapefile path is required. Upload .shp/.shx/.dbf with the raster "
+            "or set OBIA_SAMPLES_PATH in .env."
+        )
 
     Path(out_dir).mkdir(parents=True, exist_ok=True)
 
@@ -606,7 +619,14 @@ def run_obia_segmentation_only(
 
 
 def main():
-    run_obia_pipeline(RASTER, SAMPLES, OUT_DIR)
+    raster = RASTER or _env_path("OBIA_RASTER_PATH")
+    samples = SAMPLES or _env_path("OBIA_SAMPLES_PATH")
+    out_dir = OUT_DIR or _env_path("OBIA_OUT_DIR") or "obia_output"
+    if not raster or not samples:
+        raise SystemExit(
+            "Set OBIA_RASTER_PATH and OBIA_SAMPLES_PATH in .env (or pass paths to run_obia_pipeline)."
+        )
+    run_obia_pipeline(raster, samples, out_dir)
 
 
 if __name__ == "__main__":

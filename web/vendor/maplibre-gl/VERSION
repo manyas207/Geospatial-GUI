@@ -1,0 +1,8 @@
+maplibre-gl 4.7.1
+https://github.com/maplibre/maplibre-gl-js
+License: BSD-3-Clause
+
+Files:
+- maplibre-gl.js
+- maplibre-gl.css
+- maplibre-gl-csp-worker.js (required for self-hosted worker)

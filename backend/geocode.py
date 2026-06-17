@@ -10,6 +10,8 @@ import urllib.request
 GEOCODER_GEOGRAPHIES_URL = "https://geocoding.geo.census.gov/geocoder/geographies/onelineaddress"
 GEOCODER_LOCATIONS_URL = "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress"
 GEOCODER_COORDS_URL = "https://geocoding.geo.census.gov/geocoder/geographies/coordinates"
+NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
+USER_AGENT = "Geospatial-GUI-1/1.0"
 
 # Fallback centroids for common demo cities when one-line geocoding returns no match.
 CITY_CENTROIDS: dict[str, tuple[float, float]] = {
@@ -34,6 +36,35 @@ def _fetch_json(url: str, *, timeout: int = 30) -> dict:
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.URLError as exc:
         raise ConnectionError(f"Census Geocoder unavailable: {exc}") from exc
+
+
+def _geocode_via_nominatim(
+    address: str, *, timeout: int = 30
+) -> tuple[float, float, str]:
+    """Resolve a US place name to coordinates via OpenStreetMap Nominatim."""
+    params = urllib.parse.urlencode(
+        {
+            "q": address,
+            "format": "json",
+            "limit": 1,
+            "countrycodes": "us",
+        }
+    )
+    request = urllib.request.Request(
+        f"{NOMINATIM_URL}?{params}",
+        headers={"User-Agent": USER_AGENT},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            matches = json.loads(response.read().decode("utf-8"))
+    except urllib.error.URLError as exc:
+        raise ConnectionError(f"Nominatim geocoder unavailable: {exc}") from exc
+
+    if not matches:
+        raise ValueError("no_match")
+
+    hit = matches[0]
+    return float(hit["lat"]), float(hit["lon"]), hit.get("display_name") or address
 
 
 def _geographies_from_coords(lat: float, lon: float, *, timeout: int = 30) -> dict:
@@ -104,7 +135,18 @@ def geocode_address(address: str, *, timeout: int = 30) -> dict:
                 matched_address = loc_matches[0].get("matchedAddress") or address
                 geographies, lat, lon = _geographies_from_coords(lat, lon, timeout=timeout)
             else:
-                raise ValueError(f"Could not geocode address: {address!r}")
+                try:
+                    lat, lon, matched_address = _geocode_via_nominatim(
+                        address, timeout=timeout
+                    )
+                    geographies, lat, lon = _geographies_from_coords(
+                        lat, lon, timeout=timeout
+                    )
+                except ValueError:
+                    raise ValueError(
+                        f"Could not geocode address: {address!r}. "
+                        'Use a US city with state, e.g. "Round Rock, TX".'
+                    ) from None
 
     if matches:
         geographies = match.get("geographies") or {}

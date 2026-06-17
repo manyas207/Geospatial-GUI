@@ -1,10 +1,8 @@
 # Geospatial GUI
 
-Terminal-launched web dashboard for geospatial analysis: upload rasters and run **LST** or **OBIA** pipelines, explore results on an interactive map, and use the **Heat & Equity** GUI Frame with live census and population layers.
+Terminal-launched web dashboard for multi-city **land surface temperature (LST)** analysis and the **Heat & Equity** GUI Frame with live census and population layers.
 
 ## Quick start
-
-Work in **Geospatial-GUI-1** (this folder), not `Desktop\Geospatial-GUI` — that older copy can hold port 8080 with stale files.
 
 ```bash
 pip install -r requirements.txt
@@ -14,21 +12,21 @@ python serve.py
 
 Open **http://127.0.0.1:8765/**
 
-Optional: install [Ollama](https://ollama.com/) and pull a model for natural-language routing and chat:
+Optional: install [Ollama](https://ollama.com/) for dashboard chat:
 
 ```bash
 ollama pull llama3.2
 ```
 
-## Application tabs
+## Application flow
 
 | Tab | What it does |
 |-----|----------------|
-| **Ask** | Upload GeoTIFFs + question → LST or OBIA analysis |
-| **Dashboard** | Map, metrics, downloads, reference layers, follow-up chat |
-| **Heat & Equity** | 11-city GF demo with live Census / WorldPop maps |
+| **Ask** | Enter a US city address (`City, ST`), upload Landsat bands (`ST_B10`, `SR_B4`, `SR_B5`), run LST |
+| **Demo** | 11-city Heat & Equity preview with placeholder LST and live Census maps |
+| **Your project** | Dashboard for your uploaded cities (unlocked after first LST completes) |
 
-**Ask → Dashboard workflow:** upload a raster and ask a question on **Ask** → explore the output on an interactive pan/zoom map on **Dashboard**, with metrics and downloads below → ask follow-up questions in the conversation panel (answered by Ollama using the dashboard context).
+**Ask → Your project:** enter a city address on **Ask** (e.g. `Round Rock, TX`), upload Landsat GeoTIFFs, run LST → dashboard opens automatically with per-tract `lst_mean_C`.
 
 ## Configuration
 
@@ -37,9 +35,10 @@ Copy `.env.example` to `.env`. Key variables:
 | Variable | Required | Purpose |
 |----------|----------|---------|
 | `CENSUS_API_KEY` | For Heat & Equity | [Free Census API key](https://api.census.gov/data/key_signup.html) |
+| `CHAT_RATE_LIMIT_MAX` | No | Max chat requests per IP per window (default 15) |
+| `CHAT_RATE_LIMIT_WINDOW` | No | Rate-limit window in seconds (default 60) |
 | `OLLAMA_BASE_URL` | No | Default `http://127.0.0.1:11434` |
 | `OLLAMA_MODEL` | No | Default `llama3.2` |
-| `REFERENCE_DATA_DIR` | No | Folder of reference GeoTIFFs for Dashboard |
 
 See [docs/DATA.md](docs/DATA.md) for full details.
 
@@ -49,8 +48,9 @@ See [docs/DATA.md](docs/DATA.md) for full details.
 Geospatial-GUI-1/
 ├── serve.py              # Entry point: python serve.py
 ├── backend/              # FastAPI routes and API clients
-├── models/               # LST and OBIA pipelines
+├── models/               # LST pipeline (and optional OBIA CLI in obia_core.py)
 ├── web/                  # Static frontend (HTML, CSS, JS)
+│   └── vendor/maplibre-gl/  # Self-hosted MapLibre GL JS
 ├── data/                 # Uploads and caches (gitignored)
 └── docs/                 # Architecture, API, data, demo guides
 ```
@@ -67,10 +67,11 @@ Geospatial-GUI-1/
 
 Interactive API docs: http://127.0.0.1:8765/docs
 
-## Analysis models
+## LST uploads
 
-- **LST** (`models/lst_core.py`): Upload Landsat `ST_B10`, `SR_B4`, and `SR_B5` together in one request, or a 3-band stack (thermal, red, NIR).
-- **OBIA** (`models/obia_core.py`): Upload a multi-band GeoTIFF plus training shapefile components (`.shp`, `.shx`, `.dbf`, and optionally `.prj`) in the same request. Without a valid shapefile, only segmentation runs. Set `OBIA_SAMPLES_PATH` to point at a fixed shapefile if needed.
+Upload Landsat `ST_B10`, `SR_B4`, and `SR_B5` together for each city. The pipeline prefers the thermal band when present.
+
+Enter each city as **City, ST** on the Ask tab (e.g. `Round Rock, TX`). Geocoding uses Census, then OpenStreetMap Nominatim as a fallback.
 
 ## Iframe embed
 
@@ -83,5 +84,3 @@ Interactive API docs: http://127.0.0.1:8765/docs
   style="border:0;"
 ></iframe>
 ```
-
-When deployed, host the `web/` folder and point the iframe at that URL.

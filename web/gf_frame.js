@@ -1,33 +1,38 @@
 /**
- * Urban Heat & Equity GUI Frame — live census maps as server-rendered PNGs (pan/zoom, no Leaflet).
+ * Urban Heat & Equity GUI Frame — MapLibre vector maps from cached GeoPackages + tract chat queries.
  */
 (function () {
-  const CITIES = [
-    { name: "Phoenix, AZ", temp: 42.3, month: "July", color: "#c45a1a" },
-    { name: "Houston, TX", temp: 39.1, month: "August", color: "#d4652a" },
-    { name: "Dallas, TX", temp: 38.4, month: "July", color: "#d4652a" },
-    { name: "Miami, FL", temp: 37.8, month: "August", color: "#e07b32" },
-    { name: "Los Angeles, CA", temp: 36.5, month: "September", color: "#e07b32" },
-    { name: "Atlanta, GA", temp: 36.1, month: "July", color: "#e07b32" },
-    { name: "Memphis, TN", temp: 37.2, month: "July", color: "#e07b32" },
-    { name: "Chicago, IL", temp: 34.2, month: "July", color: "#3d7ea6" },
-    { name: "Detroit, MI", temp: 33.8, month: "July", color: "#3d7ea6" },
-    { name: "Baltimore, MD", temp: 33.4, month: "July", color: "#5a9ab8" },
-    { name: "Cleveland, OH", temp: 32.9, month: "July", color: "#5a9ab8" },
-  ];
-
-  const MAX_TEMP = Math.max(...CITIES.map((c) => c.temp));
-  const HOTTEST = CITIES.reduce((a, b) => (a.temp >= b.temp ? a : b));
+  let demoCities = [];
+  let demoMaxTemp = 1;
+  let demoHottest = null;
 
   const LAYER_ORDER = ["density", "income", "ethnicity", "tracts", "worldpop", "lst"];
 
+  const LAYER_FIELDS = {
+    density: "population_density_per_km2",
+    income: "median_income_usd",
+    ethnicity: "hispanic_pct",
+    tracts: null,
+    lst: "lst_mean_C",
+  };
+
+  const params = new URLSearchParams(window.location.search);
+  let appMode = "demo";
+  let projectId = null;
+  let projectData = null;
+  let projectCityList = [];
+  let demoPortfolioCache = {};
+  let demoOverview = null;
+  let demoPortfolioLoading = null;
+
   let activeCityIndex = 0;
   let cityLayersData = null;
+  let tractGeojsonCache = { token: null, data: null };
 
   let chatMessages = [
     {
       role: "assistant",
-      text: "Welcome! Select a city to load census tract maps from live APIs. Maps are rendered on the server — drag to pan and scroll to zoom. Set CENSUS_API_KEY in .env for demographic data.",
+      text: "Welcome! Select a city, hover tracts for details, or click a tract to zoom in.",
     },
   ];
 
@@ -37,14 +42,218 @@
   const mapOverlayEl = document.getElementById("gfMapOverlay");
   const mapLoadingEl = document.getElementById("gfMapLoading");
   const mapViewportEl = document.getElementById("gfMapViewport");
-  const mapImageEl = document.getElementById("gfMapImage");
+  const mapContainerEl = document.getElementById("gfMapLibre");
   const mapEmptyEl = document.getElementById("gfMapEmpty");
   const chatPanelEl = document.getElementById("gfPanelChat");
   const queryInputEl = document.getElementById("gfQueryInput");
   const sendBtnEl = document.getElementById("gfSendBtn");
   const legendTitleEl = document.getElementById("gfLegendTitle");
+  const demoBadgeEl = document.getElementById("gfDemoBadge");
+  const projectBadgeEl = document.getElementById("gfProjectBadge");
+  const cityCountBadgeEl = document.getElementById("gfCityCountBadge");
 
-  const mapView = { scale: 1, x: 0, y: 0, dragging: false, pointerId: null, lastX: 0, lastY: 0 };
+  function getCities() {
+    return appMode === "project" ? projectCityList : demoCities;
+  }
+
+  function projectLstMean(stats) {
+    if (!stats) return null;
+    return stats.mean_C ?? stats.tract_mean_lst_C ?? null;
+  }
+
+  async function fillDemoTempsFromPortfolio(cities) {
+    if (!cities.some((c) => c.temp == null)) return cities;
+    try {
+      const res = await fetch("/api/city-layers/demo-portfolio?warm=false");
+      if (!res.ok) return cities;
+      const port = await res.json();
+      const byName = Object.fromEntries((port.demo_lst || []).map((d) => [d.name, d]));
+      return cities.map((c) => {
+        const demo = byName[c.name];
+        if (!demo) return c;
+        return {
+          ...c,
+          temp: c.temp ?? demo.peak_lst_C,
+          month: c.month ?? demo.month,
+          color: c.color ?? demo.color,
+        };
+      });
+    } catch {
+      return cities;
+    }
+  }
+
+  async function ensureDemoCities() {
+    if (demoCities.length) return demoCities;
+    const response = await fetch("/api/projects/presets");
+    if (!response.ok) throw new Error("Could not load demo cities.");
+    const payload = await response.json();
+    let rows = (payload.cities || []).map((c) => ({
+      name: c.name,
+      temp: c.peak_lst_C ?? c.temp ?? null,
+      month: c.month,
+      color: c.color,
+    }));
+    if (rows.some((c) => c.temp == null) && Array.isArray(payload.demo_lst)) {
+      const byName = Object.fromEntries(payload.demo_lst.map((d) => [d.name, d]));
+      rows = rows.map((c) => {
+        const demo = byName[c.name];
+        if (!demo) return c;
+        return {
+          ...c,
+          temp: c.temp ?? demo.peak_lst_C,
+          month: c.month ?? demo.month,
+          color: c.color ?? demo.color,
+        };
+      });
+    }
+    rows = await fillDemoTempsFromPortfolio(rows);
+    demoCities = rows;
+    if (!demoCities.length) throw new Error("No demo cities configured.");
+    const temps = demoCities.map((c) => c.temp).filter((v) => v != null);
+    demoMaxTemp = temps.length ? Math.max(...temps) : 1;
+    demoHottest = temps.length
+      ? demoCities.reduce((a, b) => ((a.temp ?? -Infinity) >= (b.temp ?? -Infinity) ? a : b))
+      : null;
+    return demoCities;
+  }
+
+  function cityLstDisplay(city) {
+    if (appMode === "project") {
+      const v = projectLstMean(city?.lst_stats);
+      return v != null ? `${v}°` : "—";
+    }
+    return city?.temp != null ? `${city.temp}°` : "—";
+  }
+
+  function barChartMax() {
+    if (appMode === "project") {
+      const vals = projectCityList.map((c) => projectLstMean(c.lst_stats)).filter((v) => v != null);
+      return vals.length ? Math.max(...vals) : 1;
+    }
+    return demoMaxTemp;
+  }
+
+  function updateModeChrome() {
+    const cities = getCities();
+    if (demoBadgeEl) demoBadgeEl.hidden = appMode !== "demo";
+    if (projectBadgeEl) projectBadgeEl.hidden = appMode !== "project";
+    if (cityCountBadgeEl) {
+      cityCountBadgeEl.textContent =
+        appMode === "project"
+          ? `${cities.length} cit${cities.length === 1 ? "y" : "ies"}`
+          : "11 cities";
+    }
+    const cityLabel = document.getElementById("gfCityListLabel");
+    if (cityLabel) {
+      cityLabel.textContent = appMode === "project" ? "Your cities" : "11 cities";
+    }
+  }
+
+  function resolveAppMode() {
+    const mode = localStorage.getItem("gf_mode") || "demo";
+    if (mode === "project" && localStorage.getItem("gf_project_id")) {
+      appMode = "project";
+      projectId = localStorage.getItem("gf_project_id");
+      return;
+    }
+    appMode = "demo";
+    projectId = null;
+  }
+
+  function syncProjectCityList() {
+    if (!projectData?.cities) {
+      projectCityList = [];
+      return;
+    }
+    projectCityList = Object.entries(projectData.cities).map(([key, entry]) => ({
+      key,
+      name: entry.name || entry.address,
+      color: entry.color || "#3d7ea6",
+      temp: projectLstMean(entry.lst_stats),
+      lst_stats: entry.lst_stats || {},
+      status: entry.status,
+      address: entry.address,
+      summary: entry.summary,
+      vector_layer: entry.vector_layer,
+      worldpop: entry.worldpop,
+      map_layers: entry.map_layers,
+    }));
+  }
+
+  async function loadProject() {
+    if (!projectId) return;
+    const response = await fetch(`/api/projects/${projectId}`);
+    if (!response.ok) throw new Error("Could not load project.");
+    projectData = await response.json();
+    syncProjectCityList();
+    updateModeChrome();
+  }
+
+  async function loadDemoPortfolio(warm = true) {
+    if (demoPortfolioLoading) return demoPortfolioLoading;
+    demoPortfolioLoading = (async () => {
+      try {
+        const response = await fetch(`/api/city-layers/demo-portfolio?warm=${warm ? "true" : "false"}`);
+        if (!response.ok) throw new Error("Could not load demo portfolio.");
+        const payload = await response.json();
+        demoOverview = payload.demo_overview || null;
+        demoPortfolioCache = {};
+        Object.entries(payload.cities || {}).forEach(([address, layers]) => {
+          if (layers) demoPortfolioCache[address] = layers;
+        });
+        return demoPortfolioCache;
+      } finally {
+        demoPortfolioLoading = null;
+      }
+    })();
+    return demoPortfolioLoading;
+  }
+
+  function refreshDemoCityUI() {
+    buildCityList();
+    buildBarChart();
+    buildCityGrid();
+  }
+
+  function startDemoPortfolioWarm() {
+    if (mapLoadingEl) {
+      mapLoadingEl.hidden = false;
+      mapLoadingEl.textContent =
+        "Caching demo city data in the background (maps work while this runs)…";
+    }
+    loadDemoPortfolio(true)
+      .catch(() => {})
+      .finally(() => {
+        if (mapLoadingEl) mapLoadingEl.hidden = true;
+        refreshDemoCityUI();
+      });
+  }
+
+  function buildDemoCitiesForChat() {
+    return demoCities.map((city) => {
+      const cached = demoPortfolioCache[city.name];
+      return {
+        name: city.name,
+        peak_lst_C: city.temp,
+        month: city.month,
+        summary: cached?.summary || null,
+      };
+    });
+  }
+
+  let map = null;
+  let mapReady = false;
+  let popup = null;
+  let workerConfigured = false;
+  let hoveredTractId = null;
+  let tractInteractionsBound = false;
+
+  function configureMapLibreWorker() {
+    if (workerConfigured || typeof maplibregl === "undefined") return;
+    maplibregl.setWorkerUrl("/vendor/maplibre-gl/maplibre-gl-csp-worker.js");
+    workerConfigured = true;
+  }
 
   function cityShort(name) {
     return name.split(",")[0];
@@ -60,40 +269,6 @@
     return row ? row.classList.contains("on") : false;
   }
 
-  function clamp(value, min, max) {
-    return Math.min(max, Math.max(min, value));
-  }
-
-  function applyMapTransform() {
-    if (!mapImageEl) return;
-    mapImageEl.style.transform = `translate(${mapView.x}px, ${mapView.y}px) scale(${mapView.scale})`;
-  }
-
-  function fitMapToViewport() {
-    if (!mapImageEl?.naturalWidth || !mapViewportEl) return;
-    const vw = mapViewportEl.clientWidth;
-    const vh = mapViewportEl.clientHeight;
-    const iw = mapImageEl.naturalWidth;
-    const ih = mapImageEl.naturalHeight;
-    const fitScale = Math.min(vw / iw, vh / ih) * 0.96;
-    mapView.scale = clamp(fitScale, 0.05, 8);
-    mapView.x = (vw - iw * mapView.scale) / 2;
-    mapView.y = (vh - ih * mapView.scale) / 2;
-    applyMapTransform();
-  }
-
-  function zoomMapAt(clientX, clientY, factor) {
-    if (!mapViewportEl) return;
-    const rect = mapViewportEl.getBoundingClientRect();
-    const px = clientX - rect.left;
-    const py = clientY - rect.top;
-    const nextScale = clamp(mapView.scale * factor, 0.1, 10);
-    mapView.x = px - ((px - mapView.x) * nextScale) / mapView.scale;
-    mapView.y = py - ((py - mapView.y) * nextScale) / mapView.scale;
-    mapView.scale = nextScale;
-    applyMapTransform();
-  }
-
   function activeMapLayerId() {
     for (const layerId of LAYER_ORDER) {
       if (layerEnabled(layerId)) return layerId;
@@ -101,19 +276,26 @@
     return "density";
   }
 
-  function activePreviewUrl() {
-    if (!cityLayersData) return null;
-    const layerId = activeMapLayerId();
-    if (layerId === "worldpop") return cityLayersData.worldpop?.preview_url || null;
-    if (layerId === "lst") return cityLayersData.map_layers?.density?.preview_url || null;
-    return cityLayersData.map_layers?.[layerId]?.preview_url || null;
-  }
-
   function activeLayerLabel() {
     const layerId = activeMapLayerId();
     if (layerId === "worldpop") return "WorldPop gridded population";
-    if (layerId === "lst") return "LST (demo — use density map until LST rasters added)";
+    if (layerId === "lst") {
+      const city = getCities()[activeCityIndex];
+      if (appMode === "project" && city?.status === "ready") return "Land surface temperature";
+      return "LST (demo — density stand-in)";
+    }
     return cityLayersData?.map_layers?.[layerId]?.label || "Map layer";
+  }
+
+  function activeChoroplethField() {
+    const layerId = activeMapLayerId();
+    if (layerId === "worldpop") return null;
+    if (layerId === "lst") {
+      const city = getCities()[activeCityIndex];
+      if (appMode === "project" && city?.status === "ready") return "lst_mean_C";
+      return LAYER_FIELDS.density;
+    }
+    return LAYER_FIELDS[layerId] ?? cityLayersData?.map_layers?.[layerId]?.field ?? null;
   }
 
   function updateLegend() {
@@ -124,61 +306,481 @@
       ethnicity: "Hispanic %",
       tracts: "Tracts",
       worldpop: "WorldPop",
-      lst: "LST demo",
+      lst: appMode === "project" ? "LST" : "LST demo",
     };
     legendTitleEl.textContent = labels[activeMapLayerId()] || "Map";
   }
 
-  function showMapImage(url) {
-    if (!mapImageEl || !mapEmptyEl) return;
-    if (!url) {
-      mapImageEl.classList.add("hidden");
-      mapEmptyEl.classList.remove("hidden");
-      mapEmptyEl.textContent = "No preview for this layer.";
+  function choroplethFillPaint(field) {
+    if (!field) {
+      return { "fill-color": "#5a9ab8", "fill-opacity": 0.78 };
+    }
+
+    const value = ["coalesce", ["to-number", ["get", field]], 0];
+
+    if (field === "median_income_usd") {
+      return {
+        "fill-color": [
+          "interpolate",
+          ["linear"],
+          value,
+          20000,
+          "#edf8e9",
+          45000,
+          "#74c476",
+          80000,
+          "#238b45",
+          120000,
+          "#006d2c",
+        ],
+        "fill-opacity": 0.82,
+      };
+    }
+    if (field === "hispanic_pct") {
+      return {
+        "fill-color": [
+          "interpolate",
+          ["linear"],
+          value,
+          5,
+          "#fee5d9",
+          25,
+          "#fcae91",
+          50,
+          "#fb6a4a",
+          80,
+          "#a50f15",
+        ],
+        "fill-opacity": 0.82,
+      };
+    }
+    if (field === "lst_mean_C") {
+      return {
+        "fill-color": [
+          "interpolate",
+          ["linear"],
+          value,
+          25,
+          "#ffffb2",
+          32,
+          "#fd8d3c",
+          38,
+          "#e31a1c",
+          45,
+          "#800026",
+        ],
+        "fill-opacity": 0.82,
+      };
+    }
+    return {
+      "fill-color": [
+        "interpolate",
+        ["linear"],
+        value,
+        500,
+        "#ffffcc",
+        2500,
+        "#fd8d3c",
+        8000,
+        "#e31a1c",
+        15000,
+        "#800026",
+      ],
+      "fill-opacity": 0.82,
+    };
+  }
+
+  function linePaint() {
+    return { "line-color": "#ffffff", "line-width": 0.6 };
+  }
+
+  function refreshMapSize() {
+    if (!map) return;
+    map.resize();
+  }
+
+  function afterLayout(callback) {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(callback);
+    });
+  }
+
+  function tractPopupHtml(props) {
+    const name = props.acs_name || props.NAME || props.GEOID || "Census tract";
+    const field = activeChoroplethField();
+    const layerLabel = activeLayerLabel();
+
+    let metricHtml = "";
+    if (field === "median_income_usd" && props.median_income_usd != null) {
+      metricHtml = `<div class="gf-tract-popup-metric">$${formatNumber(props.median_income_usd)}</div><div class="gf-tract-popup-metric-label">${layerLabel}</div>`;
+    } else if (field === "hispanic_pct" && props.hispanic_pct != null) {
+      metricHtml = `<div class="gf-tract-popup-metric">${props.hispanic_pct}%</div><div class="gf-tract-popup-metric-label">${layerLabel}</div>`;
+    } else if (field === "population_density_per_km2" && props.population_density_per_km2 != null) {
+      metricHtml = `<div class="gf-tract-popup-metric">${formatNumber(props.population_density_per_km2)}/km²</div><div class="gf-tract-popup-metric-label">${layerLabel}</div>`;
+    } else if (field === "lst_mean_C" && props.lst_mean_C != null) {
+      metricHtml = `<div class="gf-tract-popup-metric">${props.lst_mean_C}°C</div><div class="gf-tract-popup-metric-label">${layerLabel}</div>`;
+    }
+
+    const rows = [
+      ["Population", formatNumber(props.population)],
+      ["Median income", props.median_income_usd != null ? `$${formatNumber(props.median_income_usd)}` : "—"],
+      ["Hispanic %", props.hispanic_pct != null ? `${props.hispanic_pct}%` : "—"],
+      ["Black %", props.black_pct != null ? `${props.black_pct}%` : "—"],
+      ["Density", props.population_density_per_km2 != null ? `${formatNumber(props.population_density_per_km2)}/km²` : "—"],
+      ["LST mean", props.lst_mean_C != null ? `${props.lst_mean_C}°C` : "—"],
+    ];
+    const dl = rows.map(([label, value]) => `<dt>${label}</dt><dd>${value}</dd>`).join("");
+    return `
+      <div class="gf-tract-popup-card">
+        <div class="gf-tract-popup-title">${name}</div>
+        ${metricHtml}
+        <dl class="gf-tract-popup">${dl}</dl>
+        <div class="gf-tract-popup-hint muted">Click tract to zoom</div>
+      </div>
+    `;
+  }
+
+  function clearTractHover() {
+    if (!map || hoveredTractId == null) return;
+    map.setFeatureState({ source: "tracts", id: hoveredTractId }, { hover: false });
+    hoveredTractId = null;
+  }
+
+  function boundsFromFeature(feature) {
+    const bounds = new maplibregl.LngLatBounds();
+    const walk = (coords) => {
+      if (typeof coords[0] === "number") {
+        bounds.extend(coords);
+        return;
+      }
+      coords.forEach(walk);
+    };
+    walk(feature.geometry.coordinates);
+    return bounds;
+  }
+
+  function bindTractInteractions() {
+    if (!map || tractInteractionsBound) return;
+    tractInteractionsBound = true;
+
+    map.on("mousemove", "tracts-fill", (event) => {
+      const feature = event.features && event.features[0];
+      if (!feature) return;
+
+      map.getCanvas().style.cursor = "pointer";
+
+      if (hoveredTractId !== null && hoveredTractId !== feature.id) {
+        map.setFeatureState({ source: "tracts", id: hoveredTractId }, { hover: false });
+      }
+      hoveredTractId = feature.id;
+      map.setFeatureState({ source: "tracts", id: hoveredTractId }, { hover: true });
+
+      popup.setLngLat(event.lngLat).setHTML(tractPopupHtml(feature.properties)).addTo(map);
+    });
+
+    map.on("mouseleave", "tracts-fill", () => {
+      clearTractHover();
+      popup.remove();
+      map.getCanvas().style.cursor = "";
+    });
+
+    map.on("click", "tracts-fill", (event) => {
+      const feature = event.features && event.features[0];
+      if (!feature) return;
+      const bounds = boundsFromFeature(feature);
+      map.fitBounds(bounds, { padding: 72, duration: 700, maxZoom: 14 });
+    });
+  }
+
+  function ensureMap() {
+    if (!mapContainerEl || typeof maplibregl === "undefined") return null;
+    configureMapLibreWorker();
+    if (map) return map;
+
+    map = new maplibregl.Map({
+      container: mapContainerEl,
+      style: {
+        version: 8,
+        sources: {},
+        layers: [{ id: "bg", type: "background", paint: { "background-color": "#e8edf2" } }],
+      },
+      center: [-98.5, 39.5],
+      zoom: 3,
+      attributionControl: true,
+    });
+
+    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "bottom-right");
+    popup = new maplibregl.Popup({
+      closeButton: false,
+      closeOnClick: false,
+      maxWidth: "300px",
+      className: "gf-tract-hover-popup",
+      offset: 14,
+    });
+
+    bindTractInteractions();
+
+    map.on("load", () => {
+      mapReady = true;
+      refreshMapSize();
+      if (cityLayersData) renderActiveMapLayer();
+    });
+
+    return map;
+  }
+
+  function fitMapBounds(bounds) {
+    if (!map || !bounds || bounds.length !== 4) return;
+    const [west, south, east, north] = bounds;
+    map.fitBounds(
+      [
+        [west, south],
+        [east, north],
+      ],
+      { padding: 36, duration: 600 }
+    );
+  }
+
+  function removeRasterOverlay() {
+    if (!map) return;
+    if (map.getLayer("raster-overlay")) map.removeLayer("raster-overlay");
+    if (map.getSource("raster-overlay")) map.removeSource("raster-overlay");
+  }
+
+  function setRasterOverlay(url, bounds) {
+    if (!map || !mapReady || !url || !bounds || bounds.length !== 4) return;
+    const [west, south, east, north] = bounds;
+    const absoluteUrl = url.startsWith("http") ? url : `${window.location.origin}${url}`;
+    removeRasterOverlay();
+    map.addSource("raster-overlay", {
+      type: "image",
+      url: `${absoluteUrl}${absoluteUrl.includes("?") ? "&" : "?"}t=${Date.now()}`,
+      coordinates: [
+        [west, north],
+        [east, north],
+        [east, south],
+        [west, south],
+      ],
+    });
+    map.addLayer({
+      id: "raster-overlay",
+      type: "raster",
+      source: "raster-overlay",
+      paint: { "raster-opacity": 0.88 },
+    });
+    if (map.getLayer("tracts-fill")) {
+      map.setPaintProperty("tracts-fill", "fill-opacity", 0.15);
+      map.setPaintProperty("tracts-line", "line-opacity", 0.35);
+    }
+  }
+
+  function showVectorLayers() {
+    if (!map || !map.getLayer("tracts-fill")) return;
+    map.setLayoutProperty("tracts-fill", "visibility", "visible");
+    map.setLayoutProperty("tracts-line", "visibility", "visible");
+    map.setPaintProperty("tracts-fill", "fill-opacity", 0.78);
+    map.setPaintProperty("tracts-line", "line-opacity", 1);
+    removeRasterOverlay();
+  }
+
+  async function loadTractGeojson() {
+    const vector = cityLayersData?.vector_layer;
+    if (!vector?.geojson_url) return null;
+
+    if (tractGeojsonCache.token === vector.token && tractGeojsonCache.data) {
+      return tractGeojsonCache.data;
+    }
+
+    const response = await fetch(vector.geojson_url);
+    if (!response.ok) throw new Error("Could not load tract GeoJSON.");
+    const data = await response.json();
+    tractGeojsonCache = { token: vector.token, data };
+    return data;
+  }
+
+  function fillOpacityPaint() {
+    return [
+      "case",
+      ["boolean", ["feature-state", "hover"], false],
+      0.95,
+      0.82,
+    ];
+  }
+
+  function upsertTractLayers(geojson, field) {
+    if (!map || !mapReady) return;
+
+    clearTractHover();
+    popup.remove();
+
+    const fillPaint = {
+      ...choroplethFillPaint(field),
+      "fill-opacity": fillOpacityPaint(),
+    };
+    const outline = linePaint();
+    const hoverOutline = {
+      "line-color": "#1a3348",
+      "line-width": [
+        "case",
+        ["boolean", ["feature-state", "hover"], false],
+        2.4,
+        0.6,
+      ],
+    };
+
+    if (map.getSource("tracts")) {
+      map.getSource("tracts").setData(geojson);
+    } else {
+      map.addSource("tracts", { type: "geojson", data: geojson, promoteId: "GEOID" });
+      map.addLayer({
+        id: "tracts-fill",
+        type: "fill",
+        source: "tracts",
+        paint: fillPaint,
+      });
+      map.addLayer({
+        id: "tracts-line",
+        type: "line",
+        source: "tracts",
+        paint: { ...outline, ...hoverOutline },
+      });
+    }
+
+    Object.keys(fillPaint).forEach((key) => {
+      map.setPaintProperty("tracts-fill", key, fillPaint[key]);
+    });
+    Object.keys(outline).forEach((key) => {
+      map.setPaintProperty("tracts-line", key, outline[key]);
+    });
+    map.setPaintProperty("tracts-line", "line-width", hoverOutline["line-width"]);
+  }
+
+  async function renderActiveMapLayer() {
+    if (!cityLayersData) return;
+
+    const layerId = activeMapLayerId();
+    const city = getCities()[activeCityIndex];
+    const summary = cityLayersData.summary || {};
+
+    if (mapOverlayEl) {
+      mapOverlayEl.innerHTML = `
+        <div class="gf-map-overlay-title">${city.name} · ${activeLayerLabel()}</div>
+        <div class="gf-map-overlay-sub">${summary.county || ""} · ${formatNumber(summary.tract_count)} tracts · hover for details, click to zoom</div>
+      `;
+    }
+    updateLegend();
+
+    if (!mapContainerEl || typeof maplibregl === "undefined") {
+      if (mapEmptyEl) {
+        mapEmptyEl.textContent = "MapLibre failed to load. Check your network connection.";
+        mapEmptyEl.classList.remove("hidden");
+      }
       return;
     }
 
-    mapEmptyEl.classList.add("hidden");
-    mapImageEl.classList.remove("hidden");
-    mapImageEl.onload = () => fitMapToViewport();
-    mapImageEl.src = `${url}${url.includes("?") ? "&" : "?"}t=${Date.now()}`;
-    if (mapImageEl.complete) fitMapToViewport();
-    updateLegend();
-  }
+    ensureMap();
+    mapContainerEl.classList.remove("hidden");
+    if (mapEmptyEl) mapEmptyEl.classList.add("hidden");
 
-  function renderActiveMapLayer() {
-    showMapImage(activePreviewUrl());
-    if (mapOverlayEl && cityLayersData) {
-      const city = CITIES[activeCityIndex];
-      const summary = cityLayersData.summary || {};
-      mapOverlayEl.innerHTML = `
-        <div class="gf-map-overlay-title">${city.name} · ${activeLayerLabel()}</div>
-        <div class="gf-map-overlay-sub">${summary.county || ""} · ${formatNumber(summary.tract_count)} tracts</div>
-      `;
+    const render = async () => {
+      try {
+        const geojson = await loadTractGeojson();
+        if (!geojson) throw new Error("No vector layer for this city.");
+
+        const field = activeChoroplethField();
+        upsertTractLayers(geojson, field);
+        refreshMapSize();
+        fitMapBounds(cityLayersData.vector_layer?.bounds_wgs84);
+
+        if (layerId === "worldpop" && cityLayersData.worldpop?.preview_url) {
+          setRasterOverlay(
+            cityLayersData.worldpop.preview_url,
+            cityLayersData.worldpop.bounds_wgs84 || cityLayersData.vector_layer.bounds_wgs84
+          );
+        } else {
+          showVectorLayers();
+        }
+      } catch (error) {
+        if (mapEmptyEl) {
+          mapEmptyEl.textContent = error.message || "Could not render map.";
+          mapEmptyEl.classList.remove("hidden");
+        }
+      }
+    };
+
+    if (mapReady) {
+      await render();
+    } else {
+      map.once("load", () => render());
     }
   }
 
-  function demoContext() {
-    const city = CITIES[activeCityIndex];
+  function chatContext() {
+    const city = getCities()[activeCityIndex];
     const summary = cityLayersData?.summary || {};
-    return {
-      model: "lst",
-      summary: cityLayersData
-        ? `Live data for ${city.name} (${summary.county}, ${summary.state}).`
-        : "11-city urban heat and equity GUI frame demo.",
+    const demoCities = appMode === "demo" ? buildDemoCitiesForChat() : null;
+    const overview =
+      appMode === "demo"
+        ? demoOverview || {
+            hottest_city: demoHottest?.name,
+            peak_lst_C: demoHottest?.temp,
+            hottest_month: demoHottest?.month,
+            city_count: demoCities.length,
+          }
+        : null;
+
+    const ctx = {
+      model: "equity",
+      project_id: appMode === "project" ? projectId : null,
+      demo_cities: demoCities,
+      demo_overview: overview,
+      tract_layer_token:
+        appMode === "project" && city?.status === "ready" && city?.key
+          ? `${projectId}:${city.key}`
+          : cityLayersData?.vector_layer?.token || null,
+      summary:
+        appMode === "demo"
+          ? `11-city urban heat and equity demo. Placeholder LST for all cities; live Census for the active city (${city?.name}). Use demo_cities and city_comparison for cross-city questions.`
+          : cityLayersData
+            ? `Census tract data for ${city.name} (${summary.county || ""}, ${summary.state || ""}).`
+            : "Multi-city LST project.",
       stats: {
-        hottest_city: HOTTEST.name,
-        peak_lst_C: HOTTEST.temp,
-        active_city: city.name,
-        demo_lst_C: city.temp,
+        active_city: city?.name,
         ...summary,
-        cities: CITIES,
       },
       logs: cityLayersData ? JSON.stringify(cityLayersData.sources || {}) : "",
-      raster: city.name,
-      artifacts: [],
-      reference_layers: [],
+      raster: appMode === "project" ? city?.lst_stats?.geotiff || "" : "",
     };
+    if (appMode === "demo") {
+      if (city?.temp != null) ctx.stats.demo_lst_C = city.temp;
+      if (overview?.peak_lst_C != null) ctx.stats.peak_lst_C = overview.peak_lst_C;
+      if (overview?.hottest_city) ctx.stats.hottest_city = overview.hottest_city;
+    } else if (city?.lst_stats) {
+      Object.assign(ctx.stats, city.lst_stats);
+    }
+    return ctx;
+  }
+
+  async function loadProjectCity(cityKey) {
+    const entry = projectData?.cities?.[cityKey];
+    if (!entry) return null;
+    if (mapLoadingEl) {
+      mapLoadingEl.hidden = false;
+      mapLoadingEl.textContent = `Loading ${entry.name}…`;
+    }
+    cityLayersData = {
+      address: entry.address,
+      summary: entry.summary || {},
+      vector_layer: entry.vector_layer,
+      worldpop: entry.worldpop || {},
+      map_layers: entry.map_layers || {},
+      sources: { lst: "User upload + zonal join", census: "Census ACS" },
+    };
+    tractGeojsonCache = { token: null, data: null };
+    if (mapLoadingEl) mapLoadingEl.hidden = true;
+    updateStats();
+    await renderActiveMapLayer();
+    return cityLayersData;
   }
 
   function updateStats() {
@@ -198,6 +800,14 @@
   }
 
   async function fetchCityLayers(address) {
+    if (appMode === "demo" && demoPortfolioCache[address]) {
+      cityLayersData = demoPortfolioCache[address];
+      tractGeojsonCache = { token: null, data: null };
+      updateStats();
+      await renderActiveMapLayer();
+      return cityLayersData;
+    }
+
     if (mapLoadingEl) {
       mapLoadingEl.hidden = false;
       mapLoadingEl.textContent = `Loading census & population data for ${address}… (first load may download tract boundaries)`;
@@ -211,14 +821,16 @@
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(
-          typeof payload.detail === "string" ? payload.detail : "Failed to load city layers."
-        );
+        throw new Error(typeof payload.detail === "string" ? payload.detail : "Failed to load city layers.");
       }
       cityLayersData = payload;
+      tractGeojsonCache = { token: null, data: null };
+      if (appMode === "demo") {
+        demoPortfolioCache[address] = payload;
+      }
       if (mapLoadingEl) mapLoadingEl.hidden = true;
       updateStats();
-      renderActiveMapLayer();
+      await renderActiveMapLayer();
       return payload;
     } catch (error) {
       if (mapLoadingEl) {
@@ -231,7 +843,9 @@
 
   async function selectCity(index) {
     activeCityIndex = index;
-    const city = CITIES[index];
+    const cities = getCities();
+    const city = cities[index];
+    if (!city) return;
 
     document.querySelectorAll(".gf-city-btn").forEach((btn, i) => {
       btn.classList.toggle("active", i === index);
@@ -240,22 +854,36 @@
       cell.classList.toggle("active", i === index);
     });
 
-    await fetchCityLayers(city.name);
+    if (appMode === "project" && city.status === "ready" && city.key) {
+      await loadProjectCity(city.key);
+    } else {
+      await fetchCityLayers(city.name || city.address);
+    }
   }
 
   function buildCityList() {
     if (!cityListEl) return;
     cityListEl.innerHTML = "";
-    CITIES.forEach((city, index) => {
+    const cities = getCities();
+    if (appMode === "project" && cities.length === 0) {
+      cityListEl.innerHTML =
+        '<p class="muted gf-project-hint">No cities in this project. Use <strong>Back to Ask</strong> to upload Landsat bands.</p>';
+      return;
+    }
+    cities.forEach((city, index) => {
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = "gf-city-btn" + (index === 0 ? " active" : "");
+      btn.className = "gf-city-btn" + (index === activeCityIndex ? " active" : "");
+      const status =
+        appMode === "project" && city.status
+          ? `<span class="gf-city-status gf-city-status-${city.status}">${city.status}</span>`
+          : "";
       btn.innerHTML = `
         <span class="gf-city-btn-left">
           <span class="gf-city-dot" style="background:${city.color}"></span>
-          ${cityShort(city.name)}
+          ${cityShort(city.name)}${status}
         </span>
-        <span class="gf-temp-pill" style="background:${city.color}22;color:${city.color}">${city.temp}°</span>
+        <span class="gf-temp-pill" style="background:${city.color}22;color:${city.color}">${cityLstDisplay(city)}</span>
       `;
       btn.addEventListener("click", () => selectCity(index));
       cityListEl.appendChild(btn);
@@ -265,29 +893,36 @@
   function buildBarChart() {
     if (!barChartEl) return;
     barChartEl.innerHTML = "";
-    CITIES.forEach((city) => {
-      const pct = Math.round((city.temp / MAX_TEMP) * 100);
+    const cities = getCities();
+    const maxVal = barChartMax();
+    const label = appMode === "project" ? "Mean LST (°C)" : "Peak LST (°C)";
+    cities.forEach((city) => {
+      const val = appMode === "project" ? projectLstMean(city.lst_stats) : city.temp;
+      const pct = val != null ? Math.round((val / maxVal) * 100) : 0;
       const row = document.createElement("div");
       row.className = "gf-chart-row";
       row.innerHTML = `
         <span>${cityShort(city.name)}</span>
         <div class="gf-bar-track"><div class="gf-bar-fill" style="width:${pct}%;background:${city.color}"></div></div>
-        <span class="gf-bar-val">${city.temp}°</span>
+        <span class="gf-bar-val">${val != null ? `${val}°` : "—"}</span>
       `;
       barChartEl.appendChild(row);
     });
+    const heading = document.querySelector("#gfPanelCharts .gf-panel-heading");
+    if (heading) heading.textContent = label;
   }
 
   function buildCityGrid() {
     if (!cityGridEl) return;
     cityGridEl.innerHTML = "";
-    CITIES.forEach((city, index) => {
+    getCities().forEach((city, index) => {
       const cell = document.createElement("button");
       cell.type = "button";
-      cell.className = "gf-mini-city" + (index === 0 ? " active" : "");
+      cell.className = "gf-mini-city" + (index === activeCityIndex ? " active" : "");
+      const temp = appMode === "project" ? projectLstMean(city.lst_stats) : city.temp;
       cell.innerHTML = `
         <div class="gf-mini-city-name">${cityShort(city.name)}</div>
-        <div class="gf-mini-city-temp" style="color:${city.color}">${city.temp}°C</div>
+        <div class="gf-mini-city-temp" style="color:${city.color}">${temp != null ? `${temp}°C` : "—"}</div>
         <div class="gf-mini-city-state muted">${city.name.split(", ")[1] || ""}</div>
       `;
       cell.addEventListener("click", () => selectCity(index));
@@ -316,20 +951,21 @@
     });
   }
 
-  function mockAnswer(question) {
-    const q = question.toLowerCase();
-    const summary = cityLayersData?.summary || {};
-    if (summary.tract_count && q.includes("income")) {
-      return `In ${CITIES[activeCityIndex].name} (${summary.county}), median tract income is about $${formatNumber(summary.median_income_usd)} across ${summary.tract_count} tracts.`;
+  function followupErrorText(response, payload) {
+    if (response.status === 429) {
+      return typeof payload.detail === "string"
+        ? payload.detail
+        : "Too many chat requests. Please wait before trying again.";
     }
-    if (summary.avg_density_per_km2 && (q.includes("density") || q.includes("population"))) {
-      return `Average tract population density in ${summary.county} is about ${formatNumber(summary.avg_density_per_km2)} people per km².`;
+    if (typeof payload.detail === "string") return payload.detail;
+    if (Array.isArray(payload.detail) && payload.detail.length) {
+      const first = payload.detail[0];
+      if (first?.msg) {
+        const field = Array.isArray(first.loc) ? first.loc.slice(-1)[0] : "";
+        return field ? `${field}: ${first.msg}` : first.msg;
+      }
     }
-    if (q.includes("ethnic") || q.includes("hispanic")) {
-      return `Use the Ethnicity overlay on the map for Hispanic % by tract in ${summary.county}.`;
-    }
-    const city = CITIES[activeCityIndex];
-    return `For ${city.name}: demo peak LST is ${city.temp}°C. Live census map layers are loaded for ${summary.county || "the county"}.`;
+    return null;
   }
 
   async function askQuestion(question) {
@@ -345,68 +981,26 @@
       const response = await fetch("/api/followup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: q, context: demoContext() }),
+        body: JSON.stringify({ question: q, context: chatContext() }),
       });
       const payload = await response.json().catch(() => ({}));
-      chatMessages.push({
-        role: "assistant",
-        text: response.ok ? payload.answer || mockAnswer(q) : mockAnswer(q),
-      });
+      if (response.ok) {
+        chatMessages.push({
+          role: "assistant",
+          text: payload.answer || "No answer returned.",
+        });
+      } else {
+        chatMessages.push({
+          role: "assistant",
+          text: followupErrorText(response, payload) || "Could not get an answer.",
+        });
+      }
     } catch {
-      chatMessages.push({ role: "assistant", text: mockAnswer(q) });
+      chatMessages.push({ role: "assistant", text: "Network error. Check that the server is running." });
     } finally {
       if (sendBtnEl) sendBtnEl.disabled = false;
       renderChat();
     }
-  }
-
-  function wireMapInteractions() {
-    if (!mapViewportEl) return;
-
-    mapViewportEl.addEventListener(
-      "wheel",
-      (event) => {
-        if (mapImageEl.classList.contains("hidden")) return;
-        event.preventDefault();
-        zoomMapAt(event.clientX, event.clientY, event.deltaY < 0 ? 1.12 : 1 / 1.12);
-      },
-      { passive: false }
-    );
-
-    mapViewportEl.addEventListener("pointerdown", (event) => {
-      if (mapImageEl.classList.contains("hidden")) return;
-      mapView.dragging = true;
-      mapView.pointerId = event.pointerId;
-      mapView.lastX = event.clientX;
-      mapView.lastY = event.clientY;
-      mapViewportEl.classList.add("is-dragging");
-      mapViewportEl.setPointerCapture(event.pointerId);
-    });
-
-    mapViewportEl.addEventListener("pointermove", (event) => {
-      if (!mapView.dragging || event.pointerId !== mapView.pointerId) return;
-      mapView.x += event.clientX - mapView.lastX;
-      mapView.y += event.clientY - mapView.lastY;
-      mapView.lastX = event.clientX;
-      mapView.lastY = event.clientY;
-      applyMapTransform();
-    });
-
-    const endDrag = (event) => {
-      if (!mapView.dragging || event.pointerId !== mapView.pointerId) return;
-      mapView.dragging = false;
-      mapView.pointerId = null;
-      mapViewportEl.classList.remove("is-dragging");
-      if (mapViewportEl.hasPointerCapture(event.pointerId)) {
-        mapViewportEl.releasePointerCapture(event.pointerId);
-      }
-    };
-    mapViewportEl.addEventListener("pointerup", endDrag);
-    mapViewportEl.addEventListener("pointercancel", endDrag);
-
-    window.addEventListener("resize", () => {
-      if (!mapImageEl.classList.contains("hidden")) fitMapToViewport();
-    });
   }
 
   function wireControls() {
@@ -451,37 +1045,77 @@
       );
     });
 
-    document.getElementById("gfZoomIn")?.addEventListener("click", () => {
-      const rect = mapViewportEl?.getBoundingClientRect();
-      if (rect) zoomMapAt(rect.left + rect.width / 2, rect.top + rect.height / 2, 1.2);
+    document.getElementById("gfZoomIn")?.addEventListener("click", () => map?.zoomIn({ duration: 200 }));
+    document.getElementById("gfZoomOut")?.addEventListener("click", () => map?.zoomOut({ duration: 200 }));
+    document.getElementById("gfZoomReset")?.addEventListener("click", () => {
+      fitMapBounds(cityLayersData?.vector_layer?.bounds_wgs84);
     });
-    document.getElementById("gfZoomOut")?.addEventListener("click", () => {
-      const rect = mapViewportEl?.getBoundingClientRect();
-      if (rect) zoomMapAt(rect.left + rect.width / 2, rect.top + rect.height / 2, 1 / 1.2);
-    });
-    document.getElementById("gfZoomReset")?.addEventListener("click", () => fitMapToViewport());
     document.getElementById("gfAllCitiesBtn")?.addEventListener("click", () => switchPanelTab("layers"));
+
+    window.addEventListener("resize", () => {
+      if (document.getElementById("page-gfframe")?.classList.contains("active")) {
+        refreshMapSize();
+      }
+    });
   }
 
-  let initialized = false;
+  let uiWired = false;
+  let dataLoaded = false;
 
-  function init() {
-    buildCityList();
-    buildBarChart();
-    buildCityGrid();
-    renderChat();
-    wireControls();
-    wireMapInteractions();
+  function activate() {
+    resolveAppMode();
 
-    if (!initialized) {
-      initialized = true;
-      selectCity(0);
-    } else if (!mapImageEl.classList.contains("hidden")) {
-      fitMapToViewport();
+    if (appMode === "project" && (!projectId || !window.AppShell?.hasReadyProject?.())) {
+      window.AppShell?.showPage("ask");
+      return;
     }
+
+    updateModeChrome();
+    dataLoaded = false;
+    tractGeojsonCache = { token: null, data: null };
+    cityLayersData = null;
+    activeCityIndex = 0;
+
+    renderChat();
+    if (!uiWired) {
+      wireControls();
+      uiWired = true;
+    }
+
+    afterLayout(async () => {
+      if (appMode === "demo") {
+        try {
+          await ensureDemoCities();
+        } catch {
+          window.AppShell?.showPage("ask");
+          return;
+        }
+      }
+
+      refreshDemoCityUI();
+
+      if (appMode === "project") {
+        try {
+          await loadProject();
+        } catch {
+          window.AppShell?.showPage("ask");
+          return;
+        }
+        refreshDemoCityUI();
+      } else {
+        startDemoPortfolioWarm();
+      }
+
+      if (!dataLoaded) {
+        dataLoaded = true;
+        const cities = getCities();
+        if (cities.length) await selectCity(activeCityIndex);
+        return;
+      }
+      refreshMapSize();
+      await renderActiveMapLayer();
+    });
   }
 
-  window.GfFrame = { init, activate: init };
-
-  if (document.getElementById("page-gfframe")) init();
+  window.GfFrame = { init: activate, activate };
 })();

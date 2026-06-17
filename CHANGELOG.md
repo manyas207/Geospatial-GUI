@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented here.
 
+## 2026-06-17
+
+### Added
+
+- **Nominatim geocode fallback** — when the Census Geocoder returns no match for a `City, ST` address, `backend/geocode.py` queries OpenStreetMap Nominatim, then reverse-geocodes coordinates via Census for county FIPS
+- **Clearer geocode errors** — registration failures suggest `City, ST` format (e.g. `Round Rock, TX`)
+
+### Changed
+
+- **Ask tab** — removed preset-city dropdown; users enter a free-text **City address** only (`web/index.html`, `web/app.js`)
+- **Dashboard chat** — `context.raster` is sent as `""` instead of `null` so `POST /api/followup` passes Pydantic validation (`web/gf_frame.js`)
+- **Chat error display** — validation errors from the API (e.g. `422`) show a readable message instead of a generic "Could not get an answer"
+
+### Fixed
+
+- **Chat 422 errors** — follow-up requests failed when `DashboardContext.raster` was `null`; demo and project modes now send an empty string
+
 ## 2025-06-09
 
 ### Added

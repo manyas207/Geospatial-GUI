@@ -10,7 +10,9 @@
 
     <title>Geospatial Dashboard</title>
 
-    <link rel="stylesheet" href="app.css?v=12" />
+    <link rel="stylesheet" href="app.css?v=17" />
+
+    <link rel="stylesheet" href="vendor/maplibre-gl/maplibre-gl.css" />
 
   </head>
 
@@ -34,21 +36,21 @@
 
           </button>
 
-          <button type="button" class="nav-btn" data-page="dashboard" id="navDashboard">
+          <button type="button" class="nav-btn" data-page="gfframe" data-gf-mode="demo" id="navDemo">
 
-            <span class="nav-label">Dashboard</span>
+            <span class="nav-label">Demo</span>
 
           </button>
 
-          <button type="button" class="nav-btn" data-page="gfframe">
+          <button type="button" class="nav-btn" data-page="gfframe" data-gf-mode="project" id="navGfframe" hidden>
 
-            <span class="nav-label">Heat &amp; Equity</span>
+            <span class="nav-label">Your project</span>
 
           </button>
 
         </div>
 
-        <p class="sidebar-foot">Ask → analyze → explore · LST cities</p>
+        <p class="sidebar-foot">Ask to upload · Demo for preview</p>
 
       </nav>
 
@@ -76,11 +78,9 @@
 
           <section id="page-ask" class="page active">
 
-            <p class="page-lede">
+            <p class="page-lede" id="askLede">
 
-              Upload GeoTIFFs (and shapefile components for OBIA: .shp, .shx, .dbf) and ask your first question. Results open on the dashboard,
-
-              where you can ask follow-up questions about the analysis.
+              Upload Landsat GeoTIFFs per city to build your LST portfolio. After the first city completes processing, you are taken to the Heat &amp; Equity dashboard automatically.
 
             </p>
 
@@ -88,196 +88,45 @@
 
               <article class="card">
 
-                <h3 class="card-title">Raster upload</h3>
+                <h3 class="card-title">Upload LST for a city</h3>
+
+                <p class="muted ask-project-hint">Add Landsat bands per city (ST_B10, SR_B4, SR_B5). Repeat for each city in your portfolio.</p>
+
+                <label class="field">
+                  <span class="field-label">City address</span>
+                  <input type="text" class="ask-project-input" id="askCityCustom" placeholder="e.g. Round Rock, TX" />
+                </label>
 
                 <div class="file-upload">
-                  <input
-                    id="raster"
-                    type="file"
-                    accept=".tif,.tiff,.geotiff,.gtiff,.shp,.shx,.dbf,.prj,.cpg"
-                    multiple
-                    hidden
-                  />
-
-                  <div class="file-drop" id="fileDrop">
-                    <p class="file-drop-title">Drop files here</p>
-                    <p class="file-drop-hint" id="fileHint">or use Add files — you can add more anytime</p>
-                    <button type="button" class="file-browse-btn" id="fileBrowseBtn">Add files</button>
+                  <input id="askProjectFiles" type="file" accept=".tif,.tiff,.geotiff,.gtiff" multiple hidden />
+                  <div class="file-drop" id="askProjectFileDrop">
+                    <p class="file-drop-title">Landsat GeoTIFFs</p>
+                    <p class="file-drop-hint" id="askProjectFileHint">ST_B10, SR_B4, SR_B5</p>
+                    <button type="button" class="file-browse-btn" id="askProjectFileBrowse">Add files</button>
                   </div>
-
-                  <ul class="file-list" id="fileList" hidden></ul>
-
-                  <button type="button" class="file-clear-btn hidden" id="fileClearBtn">Clear all</button>
+                  <ul class="file-list" id="askProjectFileList" hidden></ul>
+                  <button type="button" class="file-clear-btn hidden" id="askProjectFileClear">Clear files</button>
                 </div>
 
+                <button type="button" class="run-btn run-btn-secondary" id="askAddCity">Add city to project</button>
+
+                <button type="button" class="run-btn" id="askRunCityLst">Run LST for city</button>
+
               </article>
-
-
 
               <article class="card card-wide">
 
-                <h3 class="card-title">Your question</h3>
+                <h3 class="card-title">City portfolio</h3>
 
-                <label class="field">
+                <p class="muted ask-project-hint" id="askProjectStatus">No cities yet. Pick a city, upload bands, and run LST.</p>
 
-                  <span class="field-label">Natural language query</span>
+                <ul class="ask-project-city-list" id="askProjectCityList"></ul>
 
-                  <textarea
-
-                    id="queryInput"
-
-                    rows="4"
-
-                    placeholder="e.g. What is the land surface temperature for this scene?"
-
-                  ></textarea>
-
-                </label>
-
-                <button type="button" class="run-btn" id="runQuery">Run analysis</button>
+                <div class="ask-project-actions">
+                  <button type="button" class="run-btn run-btn-secondary" id="askNewProject">New project</button>
+                </div>
 
               </article>
-
-            </div>
-
-          </section>
-
-
-
-          <section id="page-dashboard" class="page page-dashboard">
-
-            <div id="dashboardEmpty" class="dashboard-empty">
-
-              <p>No dashboard yet. Upload a raster and ask a question on the <strong>Ask</strong> page.</p>
-
-              <button type="button" class="run-btn run-btn-secondary" data-goto="ask">Go to Ask</button>
-
-            </div>
-
-            <div class="reference-panel card" id="referencePanel">
-
-              <h3 class="card-title">Gridded population &amp; reference data</h3>
-
-              <p class="reference-hint muted" id="referenceLayersHint">
-                Loading reference layers…
-              </p>
-
-              <ul class="reference-layer-list" id="referenceLayerList"></ul>
-
-            </div>
-
-
-
-            <div id="dashboardContent" class="dashboard-layout hidden">
-
-              <div class="dashboard-main">
-
-                <div class="dashboard-header">
-
-                  <span class="model-badge" id="dashModel">—</span>
-
-                  <p class="dashboard-summary" id="dashSummary"></p>
-
-                  <p class="dashboard-raster muted" id="dashRaster"></p>
-
-                </div>
-
-                <div class="map-stage">
-
-                  <div class="map-toolbar">
-
-                    <label class="map-layer-label">
-                      <span class="sr-only">Output layer</span>
-
-                      <select id="mapLayerSelect" class="map-layer-select" hidden></select>
-
-                    </label>
-
-                    <div class="map-zoom-controls">
-
-                      <button type="button" class="map-zoom-btn" id="mapZoomOut" title="Zoom out">−</button>
-
-                      <button type="button" class="map-zoom-btn" id="mapZoomReset" title="Fit to view">Fit</button>
-
-                      <button type="button" class="map-zoom-btn" id="mapZoomIn" title="Zoom in">+</button>
-
-                    </div>
-
-                    <a class="download-btn map-download-btn hidden" id="mapDownloadBtn" href="#" download>Download map</a>
-
-                  </div>
-
-                  <div class="map-viewport" id="mapViewport">
-
-                    <img id="mapImage" class="map-layer hidden" alt="Analysis output map" draggable="false" />
-
-                    <p class="map-empty" id="mapEmpty">No map output for this run.</p>
-
-                  </div>
-
-                  <p class="map-caption muted" id="mapCaption"></p>
-
-                  <p class="map-hint muted">Drag to pan · scroll to zoom</p>
-
-                </div>
-
-                <div class="dashboard-meta">
-
-                  <div class="meta-block">
-
-                    <h3 class="card-title">Key metrics</h3>
-
-                    <dl class="stats-grid" id="dashStats"></dl>
-
-                  </div>
-
-                  <div class="meta-block">
-
-                    <h3 class="card-title">Downloads</h3>
-
-                    <ul class="download-list" id="downloadList"></ul>
-
-                  </div>
-
-                  <details class="logs-panel">
-
-                    <summary>Pipeline logs</summary>
-
-                    <pre class="logs-pre" id="dashLogs"></pre>
-
-                  </details>
-
-                </div>
-
-              </div>
-
-              <div class="chat-panel">
-
-                <h3 class="card-title">Conversation</h3>
-
-                <p class="chat-hint muted">Ask follow-up questions about these results.</p>
-
-                <div class="chat-thread" id="chatThread" aria-live="polite"></div>
-
-                <form class="chat-compose" id="followupForm">
-
-                  <label class="sr-only" for="followupInput">Follow-up question</label>
-
-                  <textarea
-
-                    id="followupInput"
-
-                    rows="2"
-
-                    placeholder="e.g. What was the mean temperature? How many segments were found?"
-
-                  ></textarea>
-
-                  <button type="submit" class="run-btn" id="followupBtn">Ask</button>
-
-                </form>
-
-              </div>
 
             </div>
 
@@ -301,9 +150,13 @@
 
                 </div>
 
-                <span class="gf-badge">11 cities</span>
+                <span class="gf-badge" id="gfCityCountBadge">11 cities</span>
 
-                <span class="gf-badge gf-badge-demo">DEMO</span>
+                <span class="gf-badge gf-badge-demo" id="gfDemoBadge" hidden>DEMO</span>
+
+                <span class="gf-badge gf-badge-project" id="gfProjectBadge" hidden>Your project</span>
+
+                <button type="button" class="gf-export-btn" data-goto="ask">Back to Ask</button>
 
                 <button type="button" class="gf-export-btn" id="gfExportBtn">Export report</button>
 
@@ -317,7 +170,7 @@
 
                   <div class="gf-sidebar-section">
 
-                    <div class="gf-sidebar-label">11 cities</div>
+                    <div class="gf-sidebar-label" id="gfCityListLabel">Your cities</div>
 
                     <div id="gfCityList"></div>
 
@@ -369,7 +222,7 @@
 
                     <div class="gf-map-viewport" id="gfMapViewport">
 
-                      <img id="gfMapImage" class="gf-map-image hidden" alt="Census tract map layer" draggable="false" />
+                      <div id="gfMapLibre" class="gf-map-libre hidden" aria-label="Interactive census tract map"></div>
 
                       <p class="gf-map-empty" id="gfMapEmpty">Select a city to load census &amp; population map layers…</p>
 
@@ -521,9 +374,11 @@
 
     </div>
 
-    <script src="app.js?v=12"></script>
+    <script src="app.js?v=20"></script>
 
-    <script src="gf_frame.js?v=3"></script>
+    <script src="vendor/maplibre-gl/maplibre-gl.js"></script>
+
+    <script src="gf_frame.js?v=14"></script>
 
   </body>
 

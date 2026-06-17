@@ -22,6 +22,8 @@ def load_dotenv() -> None:
         value = value.strip().strip('"').strip("'")
         if key and key not in os.environ:
             os.environ[key] = value
+
+
 WEB_DIR = PROJECT_ROOT / "web"
 HOST = "127.0.0.1"
 PORT = 8765
@@ -34,11 +36,16 @@ def verify_ui_files() -> None:
         raise FileNotFoundError(f"Missing {index_path}")
 
     html = index_path.read_text(encoding="utf-8")
-    if "brand-title" not in html or 'id="chatThread"' not in html:
+    markers = ('class="brand-title"', 'id="askRunCityLst"', 'id="page-gfframe"', "gf_frame.js")
+    if not all(m in html for m in markers):
         raise RuntimeError(
             f"{index_path} looks like the old layout. "
             "Edit files in this project's web/ folder (Geospatial-GUI-1)."
         )
+
+    gf_frame = WEB_DIR / "gf_frame.js"
+    if not gf_frame.exists():
+        raise FileNotFoundError(f"Missing {gf_frame}")
 
 
 def main() -> None:
@@ -50,7 +57,7 @@ def main() -> None:
     print(f"Serving API + web from: {PROJECT_ROOT}")
     print(f"Open: {url}")
     print()
-    print("POST /api/query — upload GeoTIFF + natural language question")
+    print("POST /api/projects - multi-city LST portfolio (Ask -> Heat & Equity)")
 
     uvicorn.run("backend.main:app", host=HOST, port=PORT, reload=False)
 

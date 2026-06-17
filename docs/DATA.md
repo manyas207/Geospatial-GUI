@@ -7,57 +7,46 @@ Where data lives, how it flows in, and what gets cached.
 ```
 Geospatial-GUI-1/
 ├── data/
-│   ├── {upload_uuid}/          # Per-request uploads from Ask tab
-│   │   ├── *.tif               # Uploaded rasters
-│   │   └── results/{stem}/     # LST/OBIA pipeline outputs
-│   ├── reference_previews/     # PNG previews of REFERENCE_DATA_DIR GeoTIFFs
-│   └── city_layers_cache/      # Heat & Equity cached downloads
-│       ├── tiger/              # State tract shapefiles (.zip)
-│       └── maps/               # Choropleth PNGs per city/layer
-├── web/                        # Static frontend (not user data)
-└── models/                     # Analysis code (not user data)
+│   ├── projects/{project_id}/   # Multi-city LST portfolios
+│   │   ├── manifest.json
+│   │   └── cities/{city_key}/
+│   │       ├── uploads/         # Landsat GeoTIFFs
+│   │       ├── tracts.gpkg      # Census + lst_mean_C per tract
+│   │       └── tracts.geojson
+│   └── city_layers_cache/       # Heat & Equity cached downloads
+│       ├── tiger/               # State tract shapefiles (.zip)
+│       ├── gpkg/                # Per-city tract GeoPackages
+│       ├── geojson/
+│       ├── demo_snapshots/      # Cached demo city payloads
+│       └── maps/                # Optional choropleth PNGs
+├── web/                         # Static frontend (not user data)
+└── models/                      # LST pipeline code (not user data)
 ```
 
-`data/` is gitignored for uploads and caches in normal use. Do not commit large rasters or API keys.
+`data/` is gitignored. Do not commit large rasters or API keys.
 
 ---
 
 ## Data by feature
 
-### Ask tab — user uploads
+### Ask tab — project uploads
 
 | Item | Location | Format | Source |
 |------|----------|--------|--------|
-| Uploaded rasters | `data/{uuid}/` | GeoTIFF | User browser upload |
-| Shapefile parts (OBIA) | Same folder | `.shp`, `.shx`, `.dbf`, `.prj` | User upload |
-| LST output | `data/{uuid}/results/{stem}/` | GeoTIFF + `_preview.png` | `models/lst_pipeline.py` |
-| OBIA output | Same | `.gpkg`, optional GeoTIFF | `models/obia_pipeline.py` |
+| Landsat bands | `data/projects/{id}/cities/{key}/uploads/` | GeoTIFF | User browser upload |
+| LST output | Pipeline temp under uploads | GeoTIFF | `models/lst_pipeline.py` |
+| Enriched tracts | `tracts.gpkg`, `tracts.geojson` | Vector | `backend/lst_zonal.py` |
 
-LST expects Landsat Collection 2 bands (`ST_B10`, `SR_B4`, `SR_B5`) in one request, or a 3+ band stack.
+LST expects Landsat Collection 2 bands (`ST_B10`, `SR_B4`, `SR_B5`) in one request.
 
-### Dashboard — reference layers
-
-| Item | Location | Format | Source |
-|------|----------|--------|--------|
-| Reference GeoTIFFs | `REFERENCE_DATA_DIR` (external) | `.tif` | User-provided folder |
-| Previews | `data/reference_previews/` | PNG | Generated on first scan |
-
-**Configure:**
-
-```env
-REFERENCE_DATA_DIR=C:\path\to\your\GeoTIFFs
-```
-
-If unset, the app checks `Desktop\Gridded Population Data` when that folder exists.
-
-Layers with `pop`, `density`, `census`, or `grid` in the filename get a population-style colormap.
+**City addresses on Ask:** enter a free-text US address in `City, ST` form (e.g. `Round Rock, TX`). The Ask tab no longer uses a preset-city dropdown.
 
 ### Heat & Equity — live APIs
 
 | Step | Module | External source | Cached? |
 |------|--------|-----------------|---------|
-| Geocode | `geocode.py` | [Census Geocoder](https://geocoding.geo.census.gov/) | No |
-| Tract boundaries | `tiger_tracts.py` | [Census TIGER shapefiles](https://www.census.gov/geographies/mapping-files/time-series/geo/tiger-line-file.html) | Yes — `data/city_layers_cache/tiger/tl_2023_{state}_tract.zip` |
+| Geocode | `geocode.py` | [Census Geocoder](https://geocoding.geo.census.gov/) → [Nominatim](https://nominatim.openstreetmap.org/) (fallback) → demo city centroids | No |
+| Tract boundaries | `tiger_tracts.py` | [Census TIGER shapefiles](https://www.census.gov/geographies/mapping-files/time-series/geo/tiger-line-file.html) | Yes — `data/city_layers_cache/tiger/` |
 | Demographics | `census_api.py` | [Census ACS API](https://api.census.gov/data/) | No (merged in memory) |
 | Map images | `map_render.py` | — (server render) | Yes — `data/city_layers_cache/maps/` |
 | Gridded population | `worldpop_raster.py` | [WorldPop USA 2020 COG](https://www.worldpop.org/) | Yes — PNG in `city_layers_cache/` |
@@ -70,9 +59,19 @@ Layers with `pop`, `density`, `census`, or `grid` in the filename get a populati
 | `B01003_001E` | Total population |
 | `B03002_012E` | Hispanic or Latino population |
 | `B03002_004E` | Black alone population |
-| (+ others for ethnicity breakdown) |
 
 Derived fields: `hispanic_pct`, `black_pct`, `population_density_per_km2` (from tract land area).
+
+### Geocoding (`backend/geocode.py`)
+
+Used when registering a project city (`POST /api/projects/{id}/cities`) and loading city layers (`POST /api/city-layers`):
+
+1. **Census Geocoder** — one-line address and locations API (works well for street addresses)
+2. **Nominatim** (OpenStreetMap) — fallback for `City, ST` place names when Census returns no match
+3. **Demo centroids** — hardcoded lat/lon for the 11 preset cities in `CITY_CENTROIDS`
+4. **Census reverse geocode** — coordinates → county FIPS for steps 2–3
+
+Addresses should use **City, ST** format (e.g. `Round Rock, TX`). Typos and missing state typically return `400 Could not geocode address`.
 
 ---
 
@@ -85,9 +84,11 @@ Copy `.env.example` to `.env`. `serve.py` loads `.env` on startup (existing shel
 | `CENSUS_API_KEY` | **Yes** for Heat & Equity | ACS tract demographics |
 | `OLLAMA_BASE_URL` | No (default `http://127.0.0.1:11434`) | Local LLM |
 | `OLLAMA_MODEL` | No (default `llama3.2`) | Model name |
-| `OLLAMA_ENABLED` | No (default `true`) | Set `false` for keyword-only routing |
-| `REFERENCE_DATA_DIR` | No | Reference GeoTIFF folder |
-| `EARTHDATA_API_KEY` | No | Reserved for future NASA SEDAC/GPW |
+| `OLLAMA_ENABLED` | No (default `true`) | Set `false` to disable chat LLM |
+| `CITY_LAYERS_RENDER_PNG` | No (default `false`) | Server-side map PNGs |
+| `CHAT_RATE_LIMIT_MAX` | No (default `15`) | Max follow-up chat requests per IP per window |
+| `CHAT_RATE_LIMIT_WINDOW` | No (default `60`) | Rate-limit window in seconds |
+| `CHAT_MAX_QUESTION_LENGTH` | No (default `2000`) | Max characters per chat question |
 
 Get a Census key: https://api.census.gov/data/key_signup.html
 
@@ -99,18 +100,15 @@ Get a Census key: https://api.census.gov/data/key_signup.html
 
 Downloading `tl_2023_{state}_tract.zip` can take **10–30 seconds** (~20–40 MB per state). Subsequent cities in the same state reuse the zip.
 
-### Map previews
+### Demo portfolio
 
-PNG choropleths are keyed by city address + layer id. Delete `data/city_layers_cache/maps/` to force regeneration.
+`GET /api/city-layers/demo-portfolio?warm=true` caches full city payloads under `data/city_layers_cache/demo_snapshots/`.
 
 ### Clearing caches
 
 ```bash
 # Windows PowerShell — remove all city-layer caches
 Remove-Item -Recurse -Force data\city_layers_cache
-
-# Reference previews only
-Remove-Item -Recurse -Force data\reference_previews
 ```
 
 ---
@@ -119,19 +117,20 @@ Remove-Item -Recurse -Force data\reference_previews
 
 | API | Key? | Used when |
 |-----|------|-----------|
-| Census Geocoder | No | Every `/api/city-layers` request |
-| Census ACS | Yes (`CENSUS_API_KEY`) | Every `/api/city-layers` request |
+| Census Geocoder | No | City registration and city-layers (street addresses; city-only names often miss) |
+| OpenStreetMap Nominatim | No | Geocode fallback for `City, ST` addresses when Census returns no match |
+| Census ACS | Yes (`CENSUS_API_KEY`) | City-layers and demo portfolio |
 | Census TIGER shapefiles | No | First request per state |
 | WorldPop COG (HTTPS) | No | WorldPop layer toggle |
-| Ollama | No (local) | Ask routing, Dashboard/HE chat |
+| Ollama | No (local) | Dashboard chat |
 
 ---
 
 ## Known data limitations
 
-1. **One county per city** — geocoding uses city centroid → one county (e.g. Atlanta → Fulton only).
-2. **Demo LST values** — 11-city temperatures in `gf_frame.js` are placeholders, not from satellite data.
-3. **Reference folder naming** — `Gridded Population Data` may contain non-population rasters (e.g. ASTER bands); the scanner still lists any GeoTIFF.
+1. **One county per city** — geocoding uses city centroid → one county (e.g. Atlanta → Fulton only). Use `City, ST` format; typos and missing state often fail geocoding.
+2. **Demo LST values** — 11-city temperatures come from `backend/presets.py` (placeholders, not satellite data).
+3. **Project mode** — per-tract `lst_mean_C` comes from uploaded Landsat rasters.
 
 ---
 
