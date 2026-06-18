@@ -17,9 +17,13 @@
   const navGfframe = document.getElementById("navGfframe");
 
   const askModelSelect = document.getElementById("askModelSelect");
+  const askModelLockHint = document.getElementById("askModelLockHint");
   const askModelHint = document.getElementById("askModelHint");
   const askCardTitle = document.getElementById("askCardTitle");
   const askCityCustom = document.getElementById("askCityCustom");
+  const askCityMonth = document.getElementById("askCityMonth");
+  const askCityYear = document.getElementById("askCityYear");
+  const askProjectName = document.getElementById("askProjectName");
   const askProjectFilesInput = document.getElementById("askProjectFiles");
   const askProjectFileDrop = document.getElementById("askProjectFileDrop");
   const askProjectFileBrowse = document.getElementById("askProjectFileBrowse");
@@ -29,8 +33,18 @@
   const askProjectFileTitle = document.getElementById("askProjectFileTitle");
   const askAddCityBtn = document.getElementById("askAddCity");
   const askRunCityBtn = document.getElementById("askRunCityLst");
+  const askRunProgress = document.getElementById("askRunProgress");
+  const askRunProgressLabel = document.getElementById("askRunProgressLabel");
+  const askRunProgressPct = document.getElementById("askRunProgressPct");
+  const askRunProgressBar = document.getElementById("askRunProgressBar");
+  const askRunProgressDetail = document.getElementById("askRunProgressDetail");
+  const askRunProgressTrack = askRunProgress?.querySelector(".ask-run-progress-track");
   const askProjectStatus = document.getElementById("askProjectStatus");
   const askProjectCityList = document.getElementById("askProjectCityList");
+  const askPortfolioEmpty = document.getElementById("askPortfolioEmpty");
+  const askPortfolioStats = document.getElementById("askPortfolioStats");
+  const askPortfolioCityCount = document.getElementById("askPortfolioCityCount");
+  const askPortfolioReadyCount = document.getElementById("askPortfolioReadyCount");
   const askNewProjectBtn = document.getElementById("askNewProject");
 
   let projectId = localStorage.getItem("gf_project_id") || null;
@@ -38,6 +52,21 @@
   let projectCityFiles = [];
   let selectedModelId = localStorage.getItem("gf_model_id") || "lst";
   let modelsLoaded = false;
+
+  const MONTH_NAMES = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+  ];
 
   function fileKey(file) {
     return `${file.name}|${file.size}|${file.lastModified}`;
@@ -54,8 +83,12 @@
 
   function setStatus(message, type) {
     statusEl.textContent = message || "";
-    statusEl.classList.remove("is-ok", "is-error");
+    statusEl.classList.remove("is-ok", "is-error", "is-warn");
     if (type) statusEl.classList.add(type);
+  }
+
+  function cityWarning(entry) {
+    return adapter?.cityRunWarning(entry) || null;
   }
 
   function selectedModel() {
@@ -74,10 +107,120 @@
     if (!askModelSelect) return;
     const locked = projectHasCities();
     askModelSelect.disabled = locked;
+    if (askModelLockHint) askModelLockHint.hidden = !locked;
     if (locked && projectData?.model_id) {
       selectedModelId = projectData.model_id;
       askModelSelect.value = selectedModelId;
     }
+  }
+
+  function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  const MODEL_RUN_STEPS = {
+    lst: [
+      "Uploading files…",
+      "Running LST pipeline…",
+      "Loading census tracts…",
+      "Joining temperature to tracts…",
+      "Finalizing dashboard…",
+    ],
+    obia: [
+      "Uploading files…",
+      "Loading raster…",
+      "Segmenting image (SLIC)…",
+      "Extracting features…",
+      "Training classifier…",
+      "Joining results to census tracts…",
+      "Finalizing dashboard…",
+    ],
+    default: [
+      "Uploading files…",
+      "Running analysis…",
+      "Preparing dashboard…",
+    ],
+  };
+
+  function modelRunSteps(modelId) {
+    return MODEL_RUN_STEPS[modelId] || MODEL_RUN_STEPS.default;
+  }
+
+  function showRunProgress(label, percent, detail) {
+    if (!askRunProgress) return;
+    askRunProgress.hidden = false;
+    if (askRunProgressLabel) askRunProgressLabel.textContent = label || "Running analysis…";
+    if (askRunProgressPct) {
+      askRunProgressPct.textContent = percent != null ? `${Math.round(percent)}%` : "";
+    }
+    if (askRunProgressBar) {
+      askRunProgressBar.classList.toggle("is-indeterminate", percent == null);
+      if (percent != null) {
+        askRunProgressBar.style.width = `${Math.max(0, Math.min(100, percent))}%`;
+      } else {
+        askRunProgressBar.style.width = "";
+      }
+    }
+    if (askRunProgressTrack) {
+      askRunProgressTrack.setAttribute(
+        "aria-valuenow",
+        String(percent != null ? Math.round(percent) : 0)
+      );
+    }
+    if (askRunProgressDetail && detail) askRunProgressDetail.textContent = detail;
+  }
+
+  function hideRunProgress() {
+    if (!askRunProgress) return;
+    askRunProgress.hidden = true;
+    if (askRunProgressBar) {
+      askRunProgressBar.classList.remove("is-indeterminate");
+      askRunProgressBar.style.width = "";
+    }
+  }
+
+  async function pollCityRun(cityKey, modelId) {
+    const steps = modelRunSteps(modelId);
+    const maxWaitMs = 45 * 60 * 1000;
+    const pollMs = 1500;
+    const started = Date.now();
+    let tick = 0;
+
+    while (Date.now() - started < maxWaitMs) {
+      const elapsed = Date.now() - started;
+      const response = await fetch(`/api/projects/${projectId}`);
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(parseError(payload) || "Could not check project status.");
+      }
+      projectData = payload;
+      renderAskPortfolio();
+
+      const city = projectData?.cities?.[cityKey];
+      const status = city?.status;
+      const stepIndex = Math.min(steps.length - 1, Math.floor(elapsed / 12000));
+      const stepLabel = steps[stepIndex];
+      const pseudoPct = Math.min(92, 8 + (elapsed / maxWaitMs) * 84);
+
+      showRunProgress(
+        stepLabel,
+        status === "processing" ? pseudoPct : status === "ready" ? 100 : pseudoPct,
+        status === "processing"
+          ? "Still working — large OBIA runs can take several minutes."
+          : ""
+      );
+      setStatus(`${stepLabel} (${city?.name || "city"})`, "");
+
+      if (status === "ready" || status === "error") {
+        showRunProgress(status === "ready" ? "Complete" : "Failed", status === "ready" ? 100 : 0);
+        return city;
+      }
+
+      tick += 1;
+      await sleep(pollMs);
+    }
+
+    throw new Error("Analysis timed out. Check server logs and try again.");
   }
 
   function updateAskModelUI() {
@@ -157,6 +300,103 @@
     return (askCityCustom?.value || "").trim();
   }
 
+  function resolveProjectName() {
+    return (askProjectName?.value || "").trim();
+  }
+
+  function defaultProjectName() {
+    return `${selectedModel().label} City Project`;
+  }
+
+  function resolveCityPeriod() {
+    const month = Number.parseInt(askCityMonth?.value || "", 10);
+    const year = Number.parseInt(askCityYear?.value || "", 10);
+    return {
+      month: Number.isFinite(month) ? month : null,
+      year: Number.isFinite(year) ? year : null,
+    };
+  }
+
+  function formatPeriod(month, year) {
+    if (year && month) {
+      const label = MONTH_NAMES[month - 1] || `Month ${month}`;
+      return `${label} ${year}`;
+    }
+    if (year) return String(year);
+    return "";
+  }
+
+  function periodPhrase(month, year) {
+    const label = formatPeriod(month, year);
+    return label ? ` (${label})` : "";
+  }
+
+  function validateCityPeriod() {
+    const { month, year } = resolveCityPeriod();
+    if (month != null && !year) {
+      setStatus("Enter a year when selecting a month", "is-error");
+      return null;
+    }
+    if (month != null && (month < 1 || month > 12)) {
+      setStatus("Month must be between 1 and 12", "is-error");
+      return null;
+    }
+    if (year != null && (year < 1984 || year > 2100)) {
+      setStatus("Year must be between 1984 and 2100", "is-error");
+      return null;
+    }
+    return { month, year };
+  }
+
+  function initCityPeriodFields() {
+    if (askCityMonth && !askCityMonth.options.length) {
+      const optional = document.createElement("option");
+      optional.value = "";
+      optional.textContent = "Optional";
+      askCityMonth.appendChild(optional);
+      MONTH_NAMES.forEach((label, index) => {
+        const option = document.createElement("option");
+        option.value = String(index + 1);
+        option.textContent = label;
+        askCityMonth.appendChild(option);
+      });
+      askCityMonth.value = "";
+    }
+  }
+
+  function syncProjectNameInput() {
+    if (!askProjectName) return;
+    askProjectName.value = projectData?.name || "";
+  }
+
+  async function saveProjectName() {
+    const name = resolveProjectName();
+    if (!name) {
+      setStatus("Enter a project name", "is-error");
+      return false;
+    }
+    if (!projectId) return true;
+
+    if (projectData?.name === name) return true;
+
+    const response = await fetch(`/api/projects/${projectId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(parseError(payload) || "Could not update project name.");
+    projectData = payload;
+    return true;
+  }
+
+  function formatFileSize(bytes) {
+    if (!Number.isFinite(bytes) || bytes < 0) return "";
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
   function isAcceptedFile(file) {
     const accept = adapter?.inputAccept(selectedModelId) || "";
     return adapter?.extensionMatchesAccept(file.name, accept) ?? true;
@@ -165,33 +405,55 @@
   function updateProjectFileUI() {
     if (!askProjectFileList) return;
     const defaultHint = adapter?.inputHint(selectedModelId) || "Upload required input files";
-    if (!projectCityFiles.length) {
+    const hasFiles = projectCityFiles.length > 0;
+    askProjectFileDrop?.classList.toggle("has-file", hasFiles);
+
+    if (!hasFiles) {
       askProjectFileList.hidden = true;
       askProjectFileList.innerHTML = "";
       askProjectFileClear?.classList.add("hidden");
       if (askProjectFileHint) askProjectFileHint.textContent = defaultHint;
       return;
     }
+
     askProjectFileList.hidden = false;
     askProjectFileClear?.classList.remove("hidden");
     askProjectFileList.innerHTML = "";
     projectCityFiles.forEach((file, index) => {
       const item = document.createElement("li");
       item.className = "file-list-item";
-      item.textContent = file.name;
+
+      const left = document.createElement("div");
+      left.className = "file-list-left";
+
+      const info = document.createElement("span");
+      info.className = "file-list-name";
+      info.textContent = file.name;
+      info.title = file.name;
+
+      const meta = document.createElement("span");
+      meta.className = "file-list-meta";
+      meta.textContent = formatFileSize(file.size);
+
+      left.appendChild(info);
+      left.appendChild(meta);
+
       const removeBtn = document.createElement("button");
       removeBtn.type = "button";
       removeBtn.className = "file-remove-btn";
       removeBtn.textContent = "Remove";
-      removeBtn.addEventListener("click", () => {
+      removeBtn.addEventListener("click", (event) => {
+        event.stopPropagation();
         projectCityFiles.splice(index, 1);
         updateProjectFileUI();
       });
+
+      item.appendChild(left);
       item.appendChild(removeBtn);
       askProjectFileList.appendChild(item);
     });
     if (askProjectFileHint) {
-      askProjectFileHint.textContent = `${projectCityFiles.length} file(s) selected`;
+      askProjectFileHint.textContent = `${projectCityFiles.length} file${projectCityFiles.length === 1 ? "" : "s"} ready to upload`;
     }
   }
 
@@ -230,7 +492,7 @@
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        name: `${selectedModel().label} City Project`,
+        name: resolveProjectName() || defaultProjectName(),
         model_id: selectedModelId,
       }),
     });
@@ -240,8 +502,23 @@
     projectId = payload.id;
     localStorage.setItem("gf_project_id", projectId);
     localStorage.setItem("gf_model_id", selectedModelId);
+    syncProjectNameInput();
     syncModelSelectLock();
     return projectData;
+  }
+
+  function updatePortfolioChrome(cityCount, readyCount) {
+    const hasCities = cityCount > 0;
+    askPortfolioEmpty?.toggleAttribute("hidden", hasCities);
+    if (askProjectCityList) askProjectCityList.hidden = !hasCities;
+    if (askPortfolioStats) askPortfolioStats.hidden = !hasCities;
+    if (askPortfolioCityCount) {
+      askPortfolioCityCount.textContent = `${cityCount} cit${cityCount === 1 ? "y" : "ies"}`;
+    }
+    if (askPortfolioReadyCount) {
+      askPortfolioReadyCount.hidden = readyCount <= 0;
+      askPortfolioReadyCount.textContent = `${readyCount} ready`;
+    }
   }
 
   function renderAskPortfolio() {
@@ -250,34 +527,47 @@
     const cities = projectData?.cities ? Object.entries(projectData.cities) : [];
     const pres = presentation();
     const modelId = projectData?.model_id || selectedModelId;
+    const readyCount = projectData?.ready_count || 0;
+    const warningCount = cities.filter(([, entry]) => cityWarning(entry)).length;
 
     if (!cities.length) {
       if (askProjectStatus) {
         askProjectStatus.textContent =
-          "No cities yet. Pick a model, add a city, upload files, and run analysis.";
+          "Your portfolio is empty. Add cities on the left to get started.";
       }
+      updatePortfolioChrome(0, 0);
       updateNavVisibility();
       return;
     }
 
-    const readyCount = projectData.ready_count || 0;
     if (askProjectStatus) {
-      askProjectStatus.textContent =
+      let statusText =
         readyCount > 0
-          ? `${readyCount} of ${cities.length} cities ready — dashboard unlocked. Add more cities anytime via Back to Ask.`
-          : `${cities.length} city(ies) registered — run ${pres.runVerb || "analysis"} to open the dashboard.`;
+          ? `${readyCount} of ${cities.length} ready — dashboard unlocked. Add more cities anytime.`
+          : `${cities.length} registered — run analysis to open the dashboard.`;
+      if (warningCount > 0) {
+        statusText += ` ${warningCount} cit${warningCount === 1 ? "y has" : "ies have"} raster/city overlap warnings.`;
+      }
+      askProjectStatus.textContent = statusText;
     }
+    updatePortfolioChrome(cities.length, readyCount);
 
     cities.forEach(([key, entry]) => {
       const li = document.createElement("li");
       li.className = "ask-project-city-item";
       const name = document.createElement("strong");
-      name.textContent = entry.name || entry.address || key;
+      const period = formatPeriod(entry.month, entry.year);
+      name.textContent = period
+        ? `${entry.name || entry.address || key} · ${period}`
+        : entry.name || entry.address || key;
       const meta = document.createElement("div");
       meta.className = "ask-project-city-meta";
       const status = document.createElement("span");
-      status.className = `ask-project-status ask-project-status-${entry.status || "pending"}`;
-      status.textContent = entry.status || "pending";
+      const warning = cityWarning(entry);
+      const statusKey =
+        entry.status === "ready" && warning ? "warn" : entry.status || "pending";
+      status.className = `ask-project-status ask-project-status-${statusKey}`;
+      status.textContent = warning ? "needs review" : entry.status || "pending";
       meta.appendChild(status);
       const metric = adapter?.cityPrimaryValue(entry, entry.model_id || modelId);
       if (metric != null) {
@@ -294,6 +584,19 @@
       }
       li.appendChild(name);
       li.appendChild(meta);
+      if (entry.status === "error" && entry.error) {
+        const errEl = document.createElement("div");
+        errEl.className = "ask-project-error";
+        errEl.textContent = entry.error;
+        errEl.title = entry.error;
+        li.appendChild(errEl);
+      } else if (warning) {
+        const warnEl = document.createElement("div");
+        warnEl.className = "ask-project-warning";
+        warnEl.textContent = warning;
+        warnEl.title = warning;
+        li.appendChild(warnEl);
+      }
       askProjectCityList.appendChild(li);
     });
 
@@ -315,6 +618,7 @@
         if (askModelSelect) askModelSelect.value = selectedModelId;
         localStorage.setItem("gf_model_id", selectedModelId);
       }
+      syncProjectNameInput();
       updateAskModelUI();
       renderAskPortfolio();
     } catch {
@@ -325,12 +629,16 @@
     }
   }
 
-  async function registerAskCity(address) {
+  async function registerAskCity(address, period) {
     await ensureAskProject();
     const response = await fetch(`/api/projects/${projectId}/cities`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ address }),
+      body: JSON.stringify({
+        address,
+        month: period.month,
+        year: period.year,
+      }),
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(parseError(payload) || "Could not register city.");
@@ -338,11 +646,14 @@
     return payload;
   }
 
-  function cityKeyForAddress(address) {
+  function cityKeyForEntry(address, month, year) {
     if (!projectData?.cities) return null;
     for (const [key, entry] of Object.entries(projectData.cities)) {
-      if ((entry.address || "").toLowerCase() === address.toLowerCase()) return key;
-      if ((entry.name || "").toLowerCase() === address.toLowerCase()) return key;
+      const sameAddress =
+        (entry.address || "").toLowerCase() === address.toLowerCase() ||
+        (entry.name || "").toLowerCase() === address.toLowerCase();
+      if (!sameAddress) continue;
+      if ((entry.month ?? null) === month && (entry.year ?? null) === year) return key;
     }
     return null;
   }
@@ -363,15 +674,21 @@
       setStatus("Enter a city address", "is-error");
       return;
     }
+    const period = validateCityPeriod();
+    if (!period) return;
 
     askAddCityBtn.disabled = true;
-    setStatus(`Adding ${address} to project…`, "");
+    setStatus(`Adding ${address}${periodPhrase(period.month, period.year)} to project…`, "");
 
     try {
-      await registerAskCity(address);
+      await saveProjectName();
+      await registerAskCity(address, period);
       renderAskPortfolio();
       const pres = presentation();
-      setStatus(`${address} added. Upload files, then run ${pres.runVerb || "analysis"}.`, "is-ok");
+      setStatus(
+        `${address}${periodPhrase(period.month, period.year)} added. Upload files, then run ${pres.runVerb || "analysis"}.`,
+        "is-ok"
+      );
     } catch (error) {
       setStatus(error.message || "Could not add city", "is-error");
     } finally {
@@ -385,22 +702,44 @@
       setStatus("Enter a city address", "is-error");
       return;
     }
+    const period = validateCityPeriod();
+    if (!period) return;
     if (!projectCityFiles.length) {
       setStatus(`Add input files for ${selectedModel().label}`, "is-error");
       return;
     }
 
-    const cityKey = cityKeyForAddress(address);
+    let cityKey = cityKeyForEntry(address, period.month, period.year);
     if (!cityKey) {
-      setStatus("Add the city to your project first", "is-error");
+      askRunCityBtn.disabled = true;
+      setStatus(`Registering ${address}${periodPhrase(period.month, period.year)}…`, "");
+      try {
+        await saveProjectName();
+        await registerAskCity(address, period);
+        cityKey = cityKeyForEntry(address, period.month, period.year);
+      } catch (error) {
+        setStatus(error.message || "Could not register city", "is-error");
+        askRunCityBtn.disabled = false;
+        return;
+      }
+    }
+
+    if (!cityKey) {
+      setStatus("Could not find this city and period in your project", "is-error");
       return;
     }
 
     const pres = presentation();
     askRunCityBtn.disabled = true;
-    setStatus(`Running ${pres.runVerb || selectedModel().label} for ${address}…`, "");
+    askAddCityBtn.disabled = true;
+    showRunProgress("Uploading files…", 5, "Starting analysis on the server…");
+    setStatus(
+      `Running ${pres.runVerb || selectedModel().label} for ${address}${periodPhrase(period.month, period.year)}…`,
+      ""
+    );
 
     try {
+      await saveProjectName();
       const form = new FormData();
       projectCityFiles.forEach((file) => form.append("files", file));
       const response = await fetch(
@@ -411,18 +750,38 @@
       if (!response.ok) throw new Error(parseError(payload) || "Model run failed.");
 
       projectData = payload;
+      renderAskPortfolio();
+      showRunProgress("Running analysis…", 12, "Server is processing your files.");
+
+      const finishedCity = await pollCityRun(cityKey, selectedModelId);
+      if (finishedCity?.status === "error") {
+        throw new Error(finishedCity.error || "Model run failed.");
+      }
+
       projectCityFiles = [];
       updateProjectFileUI();
       if (askCityCustom) askCityCustom.value = "";
       renderAskPortfolio();
 
-      setStatus(`${address} complete — opening dashboard…`, "is-ok");
+      const runWarning = cityWarning(finishedCity);
+      if (runWarning) {
+        setStatus(
+          `Analysis finished with a warning${periodPhrase(period.month, period.year)}: ${runWarning}`,
+          "is-warn"
+        );
+      } else {
+        setStatus(`${address}${periodPhrase(period.month, period.year)} complete — opening dashboard…`, "is-ok");
+      }
       openGfDashboard();
     } catch (error) {
-      setStatus(error.message || "Analysis failed", "is-error");
       await loadAskProjectState();
+      const failedCity = projectData?.cities?.[cityKey];
+      const detail = failedCity?.error || error.message;
+      setStatus(detail || "Analysis failed", "is-error");
     } finally {
+      hideRunProgress();
       askRunCityBtn.disabled = false;
+      askAddCityBtn.disabled = false;
     }
   }
 
@@ -433,8 +792,13 @@
     localStorage.removeItem("gf_project_id");
     localStorage.removeItem("gf_mode");
     if (askModelSelect) askModelSelect.disabled = false;
+    if (askProjectName) askProjectName.value = "";
+    if (askCityYear) askCityYear.value = "";
+    if (askCityMonth) askCityMonth.value = "";
+    initCityPeriodFields();
     updateProjectFileUI();
     renderAskPortfolio();
+    await initModels();
     setStatus("New project started — pick a model, add a city, and upload files.", "is-ok");
     showPage("ask");
   }
@@ -454,27 +818,41 @@
     updateAskModelUI();
   }
 
+  function renderModelSelect() {
+    if (!askModelSelect || !adapter) return;
+    const models = adapter.listModels();
+    askModelSelect.innerHTML = "";
+    models.forEach((spec) => {
+      const option = document.createElement("option");
+      option.value = spec.id;
+      option.textContent = spec.label;
+      askModelSelect.appendChild(option);
+    });
+    if (!adapter.getModelSpec(selectedModelId)) {
+      selectedModelId = models[0]?.id || "lst";
+    }
+    askModelSelect.value = selectedModelId;
+    syncModelSelectLock();
+    updateAskModelUI();
+  }
+
   async function initModels() {
     if (!adapter) {
       setStatus("Dashboard adapter failed to load.", "is-error");
       return;
     }
     try {
-      await adapter.fetchModels();
+      adapter.invalidateModelsCache?.();
+      await adapter.fetchModels({ force: true });
       modelsLoaded = true;
-      if (!askModelSelect) return;
-      askModelSelect.innerHTML = "";
-      adapter.listModels().forEach((spec) => {
-        const option = document.createElement("option");
-        option.value = spec.id;
-        option.textContent = spec.label;
-        askModelSelect.appendChild(option);
-      });
-      if (!adapter.getModelSpec(selectedModelId)) {
-        selectedModelId = adapter.listModels()[0]?.id || "lst";
+      renderModelSelect();
+      const models = adapter.listModels();
+      if (models.length === 1 && models[0]?.id === "lst") {
+        setStatus(
+          "Only LST is available from the server. Stop the old server (port 8765) and run python serve.py again to load OBIA.",
+          "is-error"
+        );
       }
-      askModelSelect.value = selectedModelId;
-      updateAskModelUI();
     } catch (error) {
       setStatus(error.message || "Could not load models", "is-error");
     }
@@ -493,6 +871,18 @@
   askProjectFileBrowse?.addEventListener("click", (event) => {
     event.stopPropagation();
     askProjectFilesInput?.click();
+  });
+
+  askProjectFileDrop?.addEventListener("click", (event) => {
+    if (event.target.closest("button")) return;
+    askProjectFilesInput?.click();
+  });
+
+  askProjectFileDrop?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      askProjectFilesInput?.click();
+    }
   });
 
   askProjectFilesInput?.addEventListener("change", () => {
@@ -522,10 +912,17 @@
     if (dropped.length) addProjectFiles(dropped);
   });
 
+  askProjectName?.addEventListener("change", () => {
+    saveProjectName().catch((error) => {
+      setStatus(error.message || "Could not update project name", "is-error");
+    });
+  });
+
   askAddCityBtn?.addEventListener("click", () => addCityToProject());
   askRunCityBtn?.addEventListener("click", () => runAskCityModel());
   askNewProjectBtn?.addEventListener("click", () => resetAskProject());
 
+  initCityPeriodFields();
   initModels().then(() =>
     loadAskProjectState().then(() => {
       const lastPage = localStorage.getItem("gf_last_page");

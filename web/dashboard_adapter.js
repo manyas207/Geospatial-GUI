@@ -22,6 +22,25 @@
       tractDetailLabel: "LST mean",
       chatAnalysisLabel: "land surface temperature (LST)",
     },
+    obia: {
+      dashboard: "equity",
+      analysisLayerId: "lst",
+      choroplethField: "obia_mode_class",
+      primaryMetricKeys: ["primary_value", "labeled_segments", "total_segments", "tract_mean_mode_pct"],
+      barChartLabelProject: "Labeled segments",
+      barChartLabelDemo: "Segments",
+      metricUnit: "",
+      runVerb: "OBIA",
+      cardTitle: "Run OBIA for a city",
+      portfolioHint:
+        "Upload a multispectral GeoTIFF and training shapefile (.shp, .shx, .dbf) per city.",
+      fileDropTitle: "Raster + training files",
+      analysisLayerLabel: "OBIA land cover",
+      legendLabel: "Land cover class",
+      tractPopupMetricLabel: "Dominant OBIA class",
+      tractDetailLabel: "Dominant class",
+      chatAnalysisLabel: "OBIA land-cover classification",
+    },
   };
 
   const DEFAULT_PRESENTATION = {
@@ -66,12 +85,16 @@
     };
   }
 
-  async function fetchModels() {
-    if (modelsCache) return modelsCache;
+  async function fetchModels(options = {}) {
+    const force = Boolean(options.force);
+    if (modelsCache && !force) return modelsCache;
     if (modelsPromise) return modelsPromise;
 
     modelsPromise = (async () => {
-      const response = await fetch("/api/models");
+      const cacheBust = force ? `?t=${Date.now()}` : "";
+      const response = await fetch(`/api/models${cacheBust}`, {
+        cache: force ? "no-store" : "default",
+      });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
         throw new Error(
@@ -94,6 +117,11 @@
     } finally {
       modelsPromise = null;
     }
+  }
+
+  function invalidateModelsCache() {
+    modelsCache = null;
+    modelsPromise = null;
   }
 
   function listModels() {
@@ -137,7 +165,13 @@
     return city?.run_stats || city?.lst_stats || {};
   }
 
+  function cityRunWarning(city) {
+    const stats = cityRunStats(city);
+    return stats.tract_zonal_warning || stats.run_warning || null;
+  }
+
   function cityPrimaryValue(city, modelId) {
+    if (cityRunWarning(city)) return null;
     const stats = cityRunStats(city);
     const pres = getPresentation(modelId);
     for (const key of pres.primaryMetricKeys) {
@@ -197,6 +231,7 @@
 
   global.DashboardAdapter = {
     fetchModels,
+    invalidateModelsCache,
     listModels,
     getModelSpec,
     getPresentation,
@@ -204,6 +239,7 @@
     inputHint,
     fileDropTitle,
     cityRunStats,
+    cityRunWarning,
     cityPrimaryValue,
     formatPrimaryValue,
     formatPrimaryValueShort,

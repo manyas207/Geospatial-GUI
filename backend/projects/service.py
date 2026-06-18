@@ -9,11 +9,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from backend.city_layers import TRACT_LAYER
-from backend.geocode import geocode_address
-from backend.json_util import to_json_safe
-from backend.presets import PRESET_CITIES
-from backend.router import run_model
+from backend.core.constants import TRACT_LAYER
+from backend.layers.geocode import geocode_address
+from backend.core.json_util import to_json_safe
+from backend.core.presets import PRESET_CITIES
+from backend.projects.dispatch import run_model
 from models.contract import RunContext
 from models.lst_model import LST_VECTOR_FIELDS
 from models.registry import get_model
@@ -51,6 +51,24 @@ def address_to_key(address: str) -> str:
     return slug or uuid.uuid4().hex[:10]
 
 
+def city_storage_key(address: str, *, month: int | None = None, year: int | None = None) -> str:
+    base = address_to_key(address)
+    if month is not None and year is not None:
+        return f"{base}_{year}_{month:02d}"
+    if year is not None:
+        return f"{base}_{year}"
+    return base
+
+
+def _validate_period(month: int | None, year: int | None) -> None:
+    if month is not None and year is None:
+        raise ValueError("Year is required when month is provided.")
+    if month is not None and not 1 <= month <= 12:
+        raise ValueError("Month must be between 1 and 12.")
+    if year is not None and not 1984 <= year <= 2100:
+        raise ValueError("Year must be between 1984 and 2100.")
+
+
 def _manifest_path(project_id: str, projects_dir: Path) -> Path:
     return projects_dir / project_id / "manifest.json"
 
@@ -78,9 +96,10 @@ def create_project(
     get_model(resolved_model)
 
     project_id = uuid.uuid4().hex
+    cleaned_name = (name or "").strip() or "Geospatial City Project"
     manifest = {
         "id": project_id,
-        "name": (name or "Geospatial City Project").strip(),
+        "name": cleaned_name,
         "model_id": resolved_model,
         "created_at": _now_iso(),
         "updated_at": _now_iso(),
@@ -153,24 +172,52 @@ def _enrich_project_response(manifest: dict, projects_dir: Path) -> dict:
     )
 
 
-def register_city(project_id: str, address: str, *, projects_dir: Path, city_layers_cache: Path) -> dict:
+def update_project(
+    project_id: str,
+    *,
+    name: str | None = None,
+    projects_dir: Path,
+) -> dict:
+    manifest = _load_manifest_raw(project_id, projects_dir)
+    if name is not None:
+        cleaned = name.strip()
+        if not cleaned:
+            raise ValueError("Project name cannot be empty.")
+        manifest["name"] = cleaned
+    manifest["updated_at"] = _now_iso()
+    _save_manifest(project_id, projects_dir, manifest)
+    return get_project(project_id, projects_dir=projects_dir)
+
+
+def register_city(
+    project_id: str,
+    address: str,
+    *,
+    month: int | None = None,
+    year: int | None = None,
+    projects_dir: Path,
+    city_layers_cache: Path,
+) -> dict:
     address = address.strip()
     if not address:
         raise ValueError("Address is required.")
+    _validate_period(month, year)
 
     manifest = _load_manifest_raw(project_id, projects_dir)
-    key = address_to_key(address)
     geocode = geocode_address(address)
+    key = city_storage_key(address, month=month, year=year)
 
     for existing_key, entry in manifest.get("cities", {}).items():
-        if (entry.get("address") or "").lower() == address.lower():
+        same_address = (entry.get("address") or "").lower() == address.lower()
+        same_period = entry.get("month") == month and entry.get("year") == year
+        if same_address and same_period:
             key = existing_key
             break
 
     city_dir = _city_dir(project_id, key, projects_dir)
     city_dir.mkdir(parents=True, exist_ok=True)
 
-    manifest.setdefault("cities", {})[key] = {
+    city_entry = {
         "key": key,
         "address": address,
         "name": address,
@@ -179,6 +226,12 @@ def register_city(project_id: str, address: str, *, projects_dir: Path, city_lay
         "color": _preset_color(address),
         "registered_at": _now_iso(),
     }
+    if month is not None:
+        city_entry["month"] = month
+    if year is not None:
+        city_entry["year"] = year
+
+    manifest.setdefault("cities", {})[key] = city_entry
     manifest["updated_at"] = _now_iso()
     _save_manifest(project_id, projects_dir, manifest)
     return get_project(project_id, projects_dir=projects_dir)
@@ -192,6 +245,28 @@ def _preset_color(address: str) -> str:
     return "#3d7ea6"
 
 
+def mark_city_processing(
+    project_id: str,
+    city_key: str,
+    *,
+    model_id: str,
+    projects_dir: Path,
+) -> None:
+    """Set city status to processing before a background model run."""
+    spec = get_model(model_id)
+    manifest = _load_manifest_raw(project_id, projects_dir)
+    city = manifest.get("cities", {}).get(city_key)
+    if not city:
+        raise ValueError(f"City not registered in project: {city_key}")
+
+    city["status"] = "processing"
+    city["error"] = None
+    city["model_id"] = spec.id
+    manifest["model_id"] = spec.id
+    manifest["updated_at"] = _now_iso()
+    _save_manifest(project_id, projects_dir, manifest)
+
+
 def run_city_model_upload(
     project_id: str,
     city_key: str,
@@ -200,6 +275,7 @@ def run_city_model_upload(
     model_id: str,
     projects_dir: Path,
     city_layers_cache: Path,
+    skip_processing_mark: bool = False,
 ) -> dict:
     spec = get_model(model_id)
     manifest = _load_manifest_raw(project_id, projects_dir)
@@ -212,12 +288,15 @@ def run_city_model_upload(
     uploads_dir = city_dir / "uploads"
     uploads_dir.mkdir(parents=True, exist_ok=True)
 
-    city["status"] = "processing"
-    city["error"] = None
-    city["model_id"] = spec.id
-    manifest["model_id"] = spec.id
-    manifest["updated_at"] = _now_iso()
-    _save_manifest(project_id, projects_dir, manifest)
+    if not skip_processing_mark:
+        mark_city_processing(
+            project_id,
+            city_key,
+            model_id=model_id,
+            projects_dir=projects_dir,
+        )
+        manifest = _load_manifest_raw(project_id, projects_dir)
+        city = manifest["cities"][city_key]
 
     ctx = RunContext(
         address=address,
@@ -302,6 +381,6 @@ def get_city_gpkg_path(project_id: str, city_key: str, *, projects_dir: Path) ->
 
 
 def compare_project(project_id: str, question: str, *, projects_dir: Path) -> dict:
-    from backend.city_compare import compare_cities
+    from backend.projects.compare import compare_cities
 
     return compare_cities(project_id, question, projects_dir=projects_dir)

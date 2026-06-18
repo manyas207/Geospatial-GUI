@@ -2,30 +2,6 @@
 
 Geospatial GUI is a **terminal-launched** web application: one Python process serves a static frontend (`web/`) and a FastAPI backend (`backend/` + `models/`).
 
-## High-level diagram
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  User (browser)                                                  │
-│    Ask │ Demo │ Your project (Heat & Equity)                     │
-└───────────────────────────┬─────────────────────────────────────┘
-                            │ HTTP (same origin :8765)
-┌───────────────────────────▼─────────────────────────────────────┐
-│  FRONTEND (web/)                                                 │
-│    dashboard_adapter.js · app.js · gf_frame.js · app.css         │
-└───────────────────────────┬─────────────────────────────────────┘
-                            │ /api/*
-┌───────────────────────────▼─────────────────────────────────────┐
-│  BACKEND (backend/) + MODEL PLUGINS (models/)                    │
-│    FastAPI · model registry · project orchestration · APIs       │
-└───────────────────────────┬─────────────────────────────────────┘
-                            │
-        ┌───────────────────┼───────────────────┐
-        ▼                   ▼                   ▼
-   data/ (disk)      Ollama (local)     External APIs
-   uploads, cache    :11434             Census, WorldPop
-```
-
 ## Application tabs
 
 | Tab | Frontend | Backend | Purpose |
@@ -34,60 +10,93 @@ Geospatial GUI is a **terminal-launched** web application: one Python process se
 | **Demo** | `web/gf_frame.js` | `GET /api/city-layers/demo-portfolio` | 11-city preview with placeholder LST |
 | **Your project** | `web/gf_frame.js`, `web/dashboard_adapter.js` | `GET /api/projects/{id}`, `POST /api/followup` | Adapter-driven dashboard (unlocked after ≥1 city ready) |
 
+## Backend layout
+
+```
+backend/
+  main.py              # App factory; mounts routers + static web/
+  config.py            # Paths (data/, projects/, city_layers_cache/)
+
+  api/
+    deps.py            # Shared request helpers (IP, rate limit, previews)
+    routes/
+      models.py        # GET /api/models
+      projects.py      # /api/projects/*
+      reports.py       # POST /api/projects/{id}/report
+      city_layers.py   # /api/city-layers/*
+      followup.py      # POST /api/followup
+
+  core/                # Schemas, constants, uploads, presets
+  projects/            # Project storage, compare, model dispatch
+  layers/              # Geocode → census → tracts → maps
+  chat/                # Ollama, equity burden, dashboard Q&A
+  pipelines/           # LST zonal join, OBIA zonal join, raster file picking
+  report/              # PDF export
+```
+
 ## Backend modules
 
-### Core API (`backend/main.py`)
+### Core API (`backend/main.py` + `backend/api/routes/`)
 
 - Mounts static `web/` at `/`
-- Registers all `/api/*` routes including `GET /api/models`
-- Creates cache dirs under `data/`
+- Registers `/api/*` route modules
+- Paths and cache dirs in `backend/config.py`
 
-### Model registry (`models/contract.py`, `models/registry.py`, `models/lst_model.py`)
+### Model registry (`models/contract.py`, `models/registry.py`, `models/lst_model.py`, `models/obia_model.py`)
 
 Plugin contract and registration. Each model defines inputs, `run`, optional `post_process`, dashboard type, and vector fields. See [MODELS.md](MODELS.md).
 
-Dispatched by `backend/router.run_model` and `backend/project.run_city_model_upload`.
+Registered today: `lst` (Land Surface Temperature), `obia` (OBIA land cover).
 
-### Presets (`backend/presets.py`)
+Dispatched by `backend/projects/dispatch.py` → `backend/projects/service.py` (`run_city_model_upload`). Model runs execute in a **background task**; the Ask tab polls `GET /api/projects/{id}` and shows a progress bar until the city status is `ready` or `error`.
 
-Single source of truth for the 11 demo/preset cities (names, colors, placeholder LST). Used by `project.py`, `city_layers.py`, and the Demo tab via `GET /api/projects/presets`.
+### Presets (`backend/core/presets.py`)
+
+Single source of truth for the 11 demo/preset cities (names, colors, placeholder LST). Used by project service, layer orchestrator, and the Demo tab via `GET /api/projects/presets`.
 
 ### LST implementation (`models/lst_pipeline.py`, `models/lst_core.py`)
 
 Low-level Landsat LST pipeline. Wrapped by `models/lst_model.py` as registry model id `lst`.
 
-### Project pipeline (`backend/project.py`, `backend/lst_zonal.py`)
+### OBIA implementation (`models/obia_core.py`, `models/obia_model.py`)
+
+Object-based image analysis: SLIC segmentation → spectral/shape/texture features → Random Forest classification from training ROIs → tract-level dominant class via `backend/pipelines/obia_zonal.py`.
+
+Supports **1–7+ band** rasters (HLS layout when ≥7 bands; simpler RGBN mapping for fewer bands). Training shapefiles accept flexible column names (`class_id`, `macroclass`, `id` for ROI grouping). **Pixel- and point-sized** training samples are supported via centroid labeling and buffered rasterization.
+
+### Project pipeline (`backend/projects/service.py`, `backend/pipelines/lst_zonal.py`, `backend/pipelines/obia_zonal.py`)
 
 Multi-city project workflow:
 
 1. `POST /api/projects` — create project under `data/projects/{id}/` (optional `model_id`)
-2. `POST /api/projects/{id}/cities` — register city (`geocode.py`: Census → Nominatim → demo centroids)
-3. `POST /api/projects/{id}/cities/{key}/run?model=lst` — upload files, run model, tract enrichment when applicable
+2. `POST /api/projects/{id}/cities` — register city (`layers/geocode.py`: Census → Nominatim → demo centroids)
+3. `POST /api/projects/{id}/cities/{key}/run?model=lst|obia` — upload files, background model run, tract enrichment when applicable
 4. `GET /api/projects/{id}` — portfolio manifest with per-city `run_stats`, `model_id`, tract vector URLs
 
 Legacy: `POST .../lst` aliases `.../run?model=lst`.
 
-### Cross-city comparison (`backend/city_compare.py`)
+### Cross-city comparison (`backend/projects/compare.py`)
 
 Detects city names and metrics in follow-up questions; reads `run_stats` (with `lst_stats` fallback). Returns structured `city_comparison` on `POST /api/followup`.
 
-### City layers pipeline (`backend/city_layers.py`)
+### City layers pipeline (`backend/layers/orchestrator.py`)
 
 Orchestrates the Heat & Equity data flow:
 
-1. `geocode.py` — Census Geocoder → Nominatim fallback (`City, ST`) → demo centroids → Census reverse geocode for county FIPS
-2. `tiger_tracts.py` — tract polygons (cached Census shapefile; TIGERweb fallback)
-3. `census_api.py` — ACS 5-year tract demographics
-4. `map_render.py` — optional server-side choropleth PNGs
-5. `worldpop_raster.py` — WorldPop 2020 USA raster clip + preview
+1. `layers/geocode.py` — Census Geocoder → Nominatim fallback (`City, ST`) → demo centroids → Census reverse geocode for county FIPS
+2. `layers/tracts.py` — tract polygons (cached Census shapefile; TIGERweb fallback)
+3. `layers/census.py` — ACS 5-year tract demographics
+4. `layers/map_render.py` — optional server-side choropleth PNGs
+5. `layers/worldpop.py` — WorldPop 2020 USA raster clip + preview
 
 ### AI integration
 
 | Component | Role |
 |-----------|------|
-| `ollama_client.py` | HTTP client for local Ollama `/api/chat` |
-| `dashboard_chat.py` | Follow-up Q&A grounded in dashboard context (`analysis_model` when set) |
-| `tract_query.py` | Structured tract attribute queries for chat |
+| `chat/ollama.py` | HTTP client for local Ollama `/api/chat` |
+| `chat/dashboard.py` | Follow-up Q&A grounded in dashboard context (`analysis_model` when set) |
+| `chat/equity_burden.py` | Heat-equity burden ranking for tract questions |
+| `layers/tract_query.py` | Structured tract attribute queries for chat |
 
 ## Frontend modules
 
@@ -99,7 +108,7 @@ Orchestrates the Heat & Equity data flow:
 
 ### Ask workflow (`web/app.js`)
 
-Model dropdown, dynamic upload hints, project portfolio, `POST .../run?model={id}`.
+Model dropdown, dynamic upload hints, project portfolio, async run with progress bar, `POST .../run?model={id}`, polling until city is `ready`.
 
 ### Heat & Equity frame (`web/gf_frame.js`)
 

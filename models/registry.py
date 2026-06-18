@@ -2,12 +2,23 @@
 
 from __future__ import annotations
 
+import logging
+
 from models.contract import ModelSpec
 from models.lst_model import LST_MODEL
+
+logger = logging.getLogger(__name__)
 
 _MODELS: dict[str, ModelSpec] = {
     LST_MODEL.id: LST_MODEL,
 }
+
+try:
+    from models.obia_model import OBIA_MODEL
+
+    _MODELS[OBIA_MODEL.id] = OBIA_MODEL
+except Exception as exc:  # noqa: BLE001 — optional model; keep LST available
+    logger.warning("OBIA model could not be loaded: %s", exc)
 
 
 def get_model(model_id: str) -> ModelSpec:

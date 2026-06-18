@@ -10,14 +10,14 @@ from pathlib import Path
 
 import geopandas as gpd
 
-from backend.census_api import fetch_tract_acs, merge_acs_into_geojson
-from backend.constants import TRACT_LAYER
-from backend.geocode import geocode_address
-from backend.json_util import to_json_safe
-from backend.map_render import render_tract_map
-from backend.presets import DEMO_CITY_ADDRESSES, DEMO_CITY_LST
-from backend.tiger_tracts import fetch_tract_geojson
-from backend.worldpop_raster import bounds_from_geojson, get_or_create_worldpop_preview
+from backend.layers.census import fetch_tract_acs, merge_acs_into_geojson
+from backend.core.constants import TRACT_LAYER
+from backend.layers.geocode import geocode_address
+from backend.core.json_util import to_json_safe
+from backend.layers.map_render import render_tract_map
+from backend.core.presets import DEMO_CITY_ADDRESSES, DEMO_CITY_LST
+from backend.layers.tracts import fetch_tract_geojson
+from backend.layers.worldpop import bounds_from_geojson, get_or_create_worldpop_preview
 
 MAP_LAYER_SPECS = [
     ("tracts", None, "viridis", "Census tracts"),

@@ -4,6 +4,8 @@ Terminal-launched web dashboard for **pluggable geospatial analysis models** (LS
 
 Users choose a model on **Ask**, upload inputs, run analysis, and explore results on an adapter-driven dashboard with optional LLM chat.
 
+**New to Python on Windows?** See the step-by-step beginner guide: [docs/SETUP_WINDOWS.md](docs/SETUP_WINDOWS.md) (download from GitHub, install Python, run the site).
+
 ## Prerequisites
 
 - **Python 3.10+** with `pip`
@@ -64,11 +66,11 @@ Open that URL in your browser. The API docs are at http://127.0.0.1:8765/docs
 
 | Tab | What to do |
 |-----|------------|
-| **Ask** | Choose an **analysis model**, enter a US city as `City, ST`, upload required files, run analysis |
+| **Ask** | Choose an **analysis model** (LST or OBIA), enter a US city as `City, ST`, upload required files, run analysis (progress bar while processing) |
 | **Demo** | Open the 11-city Heat & Equity preview (no uploads needed) |
 | **Your project** | Appears after your first city finishes processing |
 
-**Ask → Your project:** pick a model (LST today) → upload inputs → after the run completes you are taken to the dashboard with per-tract results (e.g. `lst_mean_C` for LST).
+**Ask → Your project:** pick a model → upload inputs → after the run completes you are taken to the dashboard with per-tract results (e.g. `lst_mean_C` for LST, `obia_mode_class` for OBIA).
 
 Restart `python serve.py` after pulling code changes (`serve.py` does not auto-reload). Hard-refresh the browser (`Ctrl+Shift+R`) if the UI looks stale.
 
@@ -181,8 +183,10 @@ Copy `.env.example` to `.env`. Key variables:
 | `OLLAMA_TIMEOUT` | No | Seconds to wait for Ollama (default `60`; raise for remote GPUs) |
 | `CHAT_RATE_LIMIT_MAX` | No | Max chat requests per IP per window (default 15) |
 | `CHAT_RATE_LIMIT_WINDOW` | No | Rate-limit window in seconds (default 60) |
+| `OBIA_N_SEGMENTS` | No | SLIC segment count for OBIA web runs (default `50000`; lower = faster) |
+| `OBIA_MIN_CLASS_FRACTION` | No | Labeled-segment purity threshold (default `0`; pixel samples OK) |
 
-See [docs/DATA.md](docs/DATA.md) for full details.
+See [docs/DATA.md](docs/DATA.md) and [docs/MODELS.md](docs/MODELS.md) for full details.
 
 ## Troubleshooting
 
@@ -195,6 +199,9 @@ See [docs/DATA.md](docs/DATA.md) for full details.
 | Stale UI after git pull | Hard-refresh the browser (`Ctrl+Shift+R`) |
 | `GET /api/models` returns 404 | Restart `python serve.py` (old process still running) |
 | Cannot change model on Ask | Model is locked once a project has cities — click **New project** |
+| OBIA not in model list | Kill process on port 8765, restart `python serve.py`, hard-refresh browser |
+| OBIA “No labeled segments” | Raster and training shapefile must overlap; use a US city matching your data extent |
+| OBIA run very slow | Lower `OBIA_N_SEGMENTS` in `.env`; OBIA can take many minutes on large scenes |
 
 ## Project layout
 
@@ -221,6 +228,7 @@ Geospatial-GUI-1/
 | [docs/API.md](docs/API.md) | REST endpoint reference |
 | [docs/DATA.md](docs/DATA.md) | Data folders, caches, external APIs |
 | [docs/DEMO.md](docs/DEMO.md) | Stakeholder demo walkthrough |
+| [docs/SETUP_WINDOWS.md](docs/SETUP_WINDOWS.md) | Beginner Windows setup (GitHub ZIP → browser) |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes |
 
 Interactive API docs: http://127.0.0.1:8765/docs
@@ -229,7 +237,10 @@ Interactive API docs: http://127.0.0.1:8765/docs
 
 Registered models are listed at `GET /api/models`. The Ask tab loads this list and calls `POST .../run?model={id}`.
 
-**LST** (`lst`) expects Landsat `ST_B10`, `SR_B4`, and `SR_B5` together for each city. The pipeline prefers the thermal band when present.
+| Model | Inputs |
+|-------|--------|
+| **LST** (`lst`) | Landsat `ST_B10`, `SR_B4`, and `SR_B5` GeoTIFFs per city |
+| **OBIA** (`obia`) | Multispectral GeoTIFF + training shapefile (`.shp`, `.shx`, `.dbf`; class column such as `class_id`) |
 
 To add a new lab model, see [docs/MODELS.md](docs/MODELS.md).
 

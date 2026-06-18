@@ -7,7 +7,7 @@ from pathlib import Path
 
 from fastapi import HTTPException, UploadFile
 
-from backend.constants import ALLOWED_UPLOAD_SUFFIXES
+from backend.core.constants import ALLOWED_UPLOAD_SUFFIXES
 
 
 async def save_upload_files(files: list[UploadFile], dest_dir: Path) -> list[Path]:
@@ -24,7 +24,10 @@ async def save_upload_files(files: list[UploadFile], dest_dir: Path) -> list[Pat
         if suffix not in ALLOWED_UPLOAD_SUFFIXES:
             raise HTTPException(
                 status_code=400,
-                detail=f"Unsupported file type: {upload.filename}. Use GeoTIFF (.tif).",
+                detail=(
+                    f"Unsupported file type: {upload.filename}. "
+                    "Use GeoTIFF (.tif) and/or shapefile sidecars (.shp, .shx, .dbf)."
+                ),
             )
         safe_name = re.sub(r"[^\w.\-]", "_", Path(upload.filename).name)
         dest_path = dest_dir / safe_name

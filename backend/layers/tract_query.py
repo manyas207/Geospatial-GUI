@@ -8,9 +8,9 @@ from typing import Any
 
 import geopandas as gpd
 
-from backend.city_layers import decode_preview_token
-from backend.constants import TRACT_LAYER
-from backend.json_util import to_json_safe
+from backend.layers.orchestrator import decode_preview_token
+from backend.core.constants import TRACT_LAYER
+from backend.core.json_util import to_json_safe
 
 QUERYABLE_FIELDS: dict[str, dict[str, Any]] = {
     "population": {"label": "population", "aliases": ["pop"]},

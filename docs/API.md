@@ -223,3 +223,5 @@ See `.env.example` and [DATA.md](DATA.md). Key variables:
 | `OLLAMA_*` | Follow-up chat |
 | `CENSUS_API_KEY` | `/api/city-layers` demographics |
 | `CITY_LAYERS_RENDER_PNG` | Optional server-side map PNGs |
+| `OBIA_N_SEGMENTS` | OBIA SLIC segment count (default `50000`) |
+| `OBIA_MIN_CLASS_FRACTION` | OBIA labeled-segment purity (default `0`) |

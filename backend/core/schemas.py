@@ -18,6 +18,7 @@ class DashboardContext(BaseModel):
     project_id: str | None = None
     demo_cities: list[dict] | None = None
     demo_overview: dict | None = None
+    project_cities: list[dict] | None = None
 
 
 class ModelInputFieldSchema(BaseModel):
@@ -47,8 +48,14 @@ class ProjectCreateRequest(BaseModel):
     model_id: str | None = None
 
 
+class ProjectUpdateRequest(BaseModel):
+    name: str | None = None
+
+
 class ProjectCityRequest(BaseModel):
     address: str
+    month: int | None = Field(default=None, ge=1, le=12)
+    year: int | None = Field(default=None, ge=1984, le=2100)
 
 
 class FollowupRequest(BaseModel):
@@ -73,4 +80,17 @@ class CityLayersResponse(BaseModel):
     vector_layer: dict = Field(default_factory=dict)
     worldpop: dict = Field(default_factory=dict)
     sources: dict = Field(default_factory=dict)
+
+
+class ReportChatPair(BaseModel):
+    question: str = ""
+    answer: str = ""
+
+
+class ReportRequest(BaseModel):
+    """Client sends active city + optional chat when user clicks Export."""
+
+    city_key: str | None = None
+    chat: list[ReportChatPair] = Field(default_factory=list)
+    max_chat_pairs: int = Field(default=5, ge=0, le=20)
 

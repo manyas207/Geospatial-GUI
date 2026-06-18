@@ -5,10 +5,10 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from backend.geocode import CITY_CENTROIDS
-from backend.json_util import to_json_safe
-from backend.presets import PRESET_CITIES
-from backend.project import get_project, list_ready_cities
+from backend.layers.geocode import CITY_CENTROIDS
+from backend.core.json_util import to_json_safe
+from backend.core.presets import PRESET_CITIES
+from backend.projects.service import get_project, list_ready_cities
 
 METRIC_ALIASES: dict[str, list[str]] = {
     "mean_lst_C": ["lst", "temperature", "heat", "surface temperature"],
@@ -16,6 +16,9 @@ METRIC_ALIASES: dict[str, list[str]] = {
     "median_income_usd": ["income", "earnings"],
     "hispanic_pct": ["hispanic", "ethnic", "latino"],
     "tract_count": ["tract", "tracts"],
+    "primary_value": ["segments", "labeled", "obia", "land cover", "classification"],
+    "labeled_segments": ["labeled segments", "training segments"],
+    "total_segments": ["total segments", "segment count"],
 }
 
 

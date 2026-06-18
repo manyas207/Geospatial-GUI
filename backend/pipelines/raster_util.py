@@ -6,7 +6,7 @@ from pathlib import Path
 
 import rasterio
 
-from backend.constants import RASTER_SUFFIXES
+from backend.core.constants import RASTER_SUFFIXES
 
 
 def _band_count(path: Path) -> int:

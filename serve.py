@@ -52,12 +52,18 @@ def main() -> None:
     load_dotenv()
     verify_ui_files()
 
+    from models.registry import list_models
+
+    model_ids = [spec.id for spec in list_models()]
+
     url = f"http://{HOST}:{PORT}/"
     print(f"Project: {PROJECT_ROOT.name}")
     print(f"Serving API + web from: {PROJECT_ROOT}")
     print(f"Open: {url}")
+    print(f"Analysis models: {', '.join(model_ids) or '(none)'}")
+    if "obia" not in model_ids:
+        print("WARNING: OBIA is not registered — restart after pulling latest code.")
     print()
-    print("POST /api/projects - multi-city LST portfolio (Ask -> Heat & Equity)")
 
     uvicorn.run("backend.main:app", host=HOST, port=PORT, reload=False)
 

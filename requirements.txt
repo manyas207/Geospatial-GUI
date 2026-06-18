@@ -11,3 +11,4 @@ geopandas
 scikit-image
 scikit-learn
 joblib
+fpdf2

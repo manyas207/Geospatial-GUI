@@ -9,8 +9,8 @@ import numpy as np
 import rasterio
 from rasterio.mask import mask
 
-from backend.constants import TRACT_LAYER
-from backend.json_util import to_json_safe
+from backend.core.constants import TRACT_LAYER
+from backend.core.json_util import to_json_safe
 
 
 def enrich_tracts_with_lst(

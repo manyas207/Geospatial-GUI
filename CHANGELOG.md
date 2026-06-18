@@ -2,6 +2,91 @@
 
 All notable changes to this project are documented here.
 
+## 2026-06-18 (backend reorganization, OBIA, reports, UI)
+
+### Added
+
+#### Backend layout
+
+Reorganized monolithic `backend/main.py` into a modular package:
+
+- `backend/api/routes/` — `models`, `projects`, `reports`, `city_layers`, `followup`
+- `backend/core/` — schemas, constants, uploads, presets, rate limit, JSON helpers
+- `backend/projects/` — project storage, model dispatch, cross-city compare
+- `backend/layers/` — geocode, census, tracts, orchestrator, map render, WorldPop, tract query
+- `backend/chat/` — Ollama client, dashboard Q&A, equity burden
+- `backend/pipelines/` — LST zonal join, OBIA zonal join, raster utilities
+- `backend/report/` — on-demand PDF report generation (`fpdf2`)
+- `backend/config.py` — shared paths (`data/`, projects, city-layers cache)
+- `scripts/migrate_backend_layout.py` — one-time import-path migration helper
+
+#### OBIA analysis model
+
+- **`models/obia_model.py`** — plugin wrapper registered as `obia`
+- **`models/obia_core.py`** — full pipeline: SLIC segmentation → features → ROI labeling → Random Forest CV → classify → export
+- **`backend/pipelines/obia_zonal.py`** — joins OBIA segments to census tracts (`obia_mode_class`, `obia_mode_pct`, `obia_segment_count`)
+- **Flexible raster bands** — adapts to 1–7+ bands (HLS layout when ≥7; RGBN-style mapping for fewer)
+- **Flexible training columns** — `class_id`, `macroclass`, `class`, etc.; `id` / `roi_id` optional (auto-generated per polygon if missing)
+- **Pixel/point training samples** — centroid labeling, tiny-polygon buffering, and `all_touched` rasterization for proof-of-concept ROIs
+- **Diagnostic labeling errors** — explains bounds overlap, CRS issues, and fraction-threshold failures
+- **Segmentation-only mode** — runs without a training shapefile (exports `segments.gpkg`)
+- **Env tuning** — `OBIA_N_SEGMENTS`, `OBIA_MIN_CLASS_FRACTION` (default `0`)
+
+#### API & orchestration
+
+- **`POST /api/projects/{id}/report`** — PDF export with map snapshot, run stats, and recent chat (`backend/report/pdf.py`)
+- **Async model runs** — `BackgroundTasks` in `projects.py`; city status `processing` → `ready` / `error`
+- **Shapefile uploads** — `.shp`/`.shx`/`.dbf` (and `.prj`) accepted alongside rasters (`backend/core/constants.py`)
+
+#### Frontend
+
+- **Ask tab progress bar** — polls `GET /api/projects/{id}` with per-model step labels (LST vs OBIA) while analysis runs
+- **OBIA presentation** — `PRESENTATION.obia` in `web/dashboard_adapter.js` (choropleth, metrics, file hints)
+- **Model lock hint** — explains that model cannot change after cities are added; **New project** required to switch models
+- **`fetchModels({ force: true })`** — bypasses cached model list on Ask bootstrap
+- **Export PDF report** button on project dashboard (`web/gf_frame.js` → `POST /api/projects/{id}/report`)
+- **Tract overlap warnings** — map overlay when raster/analysis extent does not match registered US city
+- **LST-only scale UI** — temperature legend controls hidden for non-LST models (`web/gf_frame.js`)
+- **Ask UI refresh** — expanded layout, portfolio chrome, run-progress styling (`web/app.css`, `web/index.html`)
+
+#### Docs & tooling
+
+- **`serve.py`** — prints registered analysis models on startup; UI file sanity check
+- **`models/registry.py`** — safe OBIA import (warns and keeps LST available if OBIA deps fail)
+- **Docs** — [MODELS.md](MODELS.md), [ARCHITECTURE.md](ARCHITECTURE.md), [API.md](API.md), [README.md](README.md), [SETUP_WINDOWS.md](SETUP_WINDOWS.md) updated for new layout and OBIA
+
+### Changed
+
+- **`backend/main.py`** — slim app factory; routers only (was ~600 lines of inline routes)
+- **Import paths** — e.g. `backend/geocode.py` → `backend/layers/geocode.py`, `backend/project.py` → `backend/projects/service.py`
+- **`GET /api/models`** — `Cache-Control: no-store` to avoid stale model list in browser
+- **`OBIA_MIN_CLASS_FRACTION`** — default `0` (env-configurable); was `0.5`
+- **`requirements.txt`** — added `fpdf2` for PDF reports
+- **`.env.example`** — documented `OBIA_N_SEGMENTS`, `OBIA_MIN_CLASS_FRACTION`
+
+### Fixed
+
+- OBIA `KeyError` on `b7_mean` for rasters with fewer than 7 bands
+- OBIA `KeyError` on `roi_id` when training shapefile uses `id` only
+- OBIA `KeyError` on `macroclass` when training shapefile uses `class_id`
+- **Unsupported file type: `.shp`** — shapefile suffixes missing from `ALLOWED_UPLOAD_SUFFIXES`
+- Training shapefile missing `.prj` — clearer error; can inherit raster CRS when geometries are naive
+- **No labeled segments** — improved diagnostics; pixel/point samples now label segments under centroids
+- Model dropdown showing only **LST** when an old server process was still bound to port **8765**
+- Stale OBIA model list in browser after server restart
+
+### Removed
+
+- Flat backend modules absorbed into package layout (`backend/dashboard_chat.py` merged into `backend/chat/dashboard.py`, etc.)
+- Architecture diagram assets (`docs/ARCHITECTURE_DIAGRAM.md`, `docs/geospatial-dashboard-*.png`)
+- ASCII high-level diagram block from [ARCHITECTURE.md](ARCHITECTURE.md)
+
+### Notes
+
+- Dashboard map layers still require **US census tracts** — register a US city (`City, ST`) that matches your raster extent; non-US-only workflows need a future custom-region mode
+- OBIA runs can take **several minutes** on large scenes (SLIC + GLCM texture); lower `OBIA_N_SEGMENTS` in `.env` for faster POC runs
+- Restart `python serve.py` after code or `.env` changes; kill stale processes on port 8765 if the model list looks wrong
+
 ## 2026-06-17 (model platform)
 
 ### Added

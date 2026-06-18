@@ -7,7 +7,8 @@
   let demoMaxTemp = 1;
   let demoHottest = null;
 
-  const LAYER_ORDER = ["density", "income", "ethnicity", "tracts", "worldpop", "lst"];
+  const LAYER_ORDER = ["lst", "density", "income", "ethnicity", "tracts"];
+  const CHOROPLETH_LAYER_IDS = ["lst", "density", "income", "ethnicity", "tracts"];
 
   const LAYER_FIELDS = {
     density: "population_density_per_km2",
@@ -47,10 +48,16 @@
   const mapViewportEl = document.getElementById("gfMapViewport");
   const mapContainerEl = document.getElementById("gfMapLibre");
   const mapEmptyEl = document.getElementById("gfMapEmpty");
+  const mapWarningEl = document.getElementById("gfMapWarning");
   const chatPanelEl = document.getElementById("gfPanelChat");
+  const keyQueriesEl = document.getElementById("gfKeyQueries");
   const queryInputEl = document.getElementById("gfQueryInput");
   const sendBtnEl = document.getElementById("gfSendBtn");
   const legendTitleEl = document.getElementById("gfLegendTitle");
+  const legendLowEl = document.getElementById("gfLegendLow");
+  const legendHighEl = document.getElementById("gfLegendHigh");
+  const legendBarEl = document.querySelector(".gf-legend-bar");
+  const lstScaleWrapEl = document.getElementById("gfLstScaleWrap");
   const demoBadgeEl = document.getElementById("gfDemoBadge");
   const projectBadgeEl = document.getElementById("gfProjectBadge");
   const cityCountBadgeEl = document.getElementById("gfCityCountBadge");
@@ -83,6 +90,120 @@
     return modelPresentation(modelId).dashboard === "equity";
   }
 
+  function keyQueriesForState(modelId) {
+    const pres = modelPresentation(modelId);
+    const metric = pres.legendLabel || "analysis metric";
+    const analysisName = pres.chatAnalysisLabel || "analysis output";
+    const cityScope = appMode === "demo" ? "all 11 demo cities" : "my project cities";
+
+    if (appMode === "demo") {
+      return [
+        {
+          label: "Hottest month, all cities",
+          prompt:
+            "Which city had the hottest month overall across all 11 demo cities, and what is the peak LST value?",
+          style: "gf-action-highlight",
+        },
+        {
+          label: "Hottest month per city",
+          prompt: "Show the hottest month for each of the 11 demo cities with average LST values.",
+          style: "gf-action-highlight",
+        },
+        {
+          label: "Low-income + high LST",
+          prompt:
+            "Which low-income census tracts across all 11 demo cities have the highest LST exposure? Focus on income below $40k.",
+          style: "gf-action-equity",
+        },
+        {
+          label: "Ethnic community heat burden",
+          prompt:
+            "Which ethnic community has the highest heat exposure across all 11 demo cities? Rank by average LST in majority-minority tracts.",
+          style: "gf-action-equity",
+        },
+        {
+          label: "Population density vs LST",
+          prompt:
+            "Compare population density vs LST for all 11 demo cities. Which city shows the strongest urban heat island pattern?",
+        },
+        {
+          label: "Monthly LST trends",
+          prompt:
+            "Generate a monthly LST trend summary for all 11 demo cities showing variation across 12 months.",
+        },
+      ];
+    }
+
+    if (pres.dashboard === "equity") {
+      return [
+        {
+          label: `${metric} hotspots`,
+          prompt: `Which city in my project has the highest ${metric} and what are the top hotspot tracts?`,
+          style: "gf-action-highlight",
+        },
+        {
+          label: "City-by-city comparison",
+          prompt: `Compare ${analysisName} across my project cities and rank them from highest to lowest.`,
+          style: "gf-action-highlight",
+        },
+        {
+          label: "Low-income exposure",
+          prompt: `In my project cities, where do low-income tracts overlap most with high ${metric}?`,
+          style: "gf-action-equity",
+        },
+        {
+          label: "Equity burden summary",
+          prompt:
+            "Summarize which communities appear most burdened by heat exposure and socioeconomic vulnerability in my project data.",
+          style: "gf-action-equity",
+        },
+        {
+          label: "Population density relationship",
+          prompt: `For ${cityScope}, explain the relationship between population density and ${metric}.`,
+        },
+      ];
+    }
+
+    return [
+      {
+        label: `${metric} overview`,
+        prompt: `Summarize ${analysisName} across my project cities and highlight the highest and lowest results.`,
+        style: "gf-action-highlight",
+      },
+      {
+        label: "Top city and tract",
+        prompt: `Which city and tract in my project have the strongest ${metric} signal?`,
+        style: "gf-action-highlight",
+      },
+      {
+        label: "Cross-city ranking",
+        prompt: `Rank my project cities by ${analysisName} and explain key differences.`,
+      },
+      {
+        label: "Outlier detection",
+        prompt: `Identify outlier tracts in my project data and explain why they stand out for ${metric}.`,
+      },
+      {
+        label: "Actionable summary",
+        prompt: "Give a concise decision-oriented summary of the main findings for my current project.",
+      },
+    ];
+  }
+
+  function renderKeyQueries(modelId) {
+    if (!keyQueriesEl) return;
+    const queries = keyQueriesForState(modelId);
+    keyQueriesEl.innerHTML = "";
+    queries.forEach((item) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = `gf-action-btn${item.style ? ` ${item.style}` : ""}`;
+      btn.dataset.gfPrompt = item.prompt;
+      btn.textContent = item.label;
+      keyQueriesEl.appendChild(btn);
+    });
+  }
+
   function projectPrimaryMetric(city) {
     if (!city) return null;
     return adapter?.cityPrimaryValue(city, activeProjectModelId(city)) ?? null;
@@ -102,9 +223,9 @@
 
     if (appMode === "project") {
       if (topbarTitleEl) {
-        topbarTitleEl.textContent = equity
-          ? "Urban Heat & Equity GUI Frame"
-          : `${spec?.label || "Analysis"} Dashboard`;
+        topbarTitleEl.textContent =
+          projectData?.name ||
+          (equity ? "Urban Heat & Equity GUI Frame" : `${spec?.label || "Analysis"} Dashboard`);
       }
       if (topbarSubtitleEl) {
         topbarSubtitleEl.textContent = equity
@@ -117,13 +238,32 @@
       btn.hidden = appMode === "project" && !equity;
     });
     document.getElementById("gfLayerAnalysis")?.classList.toggle("hidden", appMode === "project" && !equity);
+    renderKeyQueries(modelId);
+    updateLstScaleUI();
   }
 
   function getCities() {
     return appMode === "project" ? projectCityList : demoCities;
   }
 
+  function cityRunWarning(city) {
+    return adapter?.cityRunWarning(city) || null;
+  }
+
+  function updateMapWarning(city) {
+    if (!mapWarningEl) return;
+    const warning = appMode === "project" ? cityRunWarning(city) : null;
+    if (warning) {
+      mapWarningEl.hidden = false;
+      mapWarningEl.textContent = warning;
+    } else {
+      mapWarningEl.hidden = true;
+      mapWarningEl.textContent = "";
+    }
+  }
+
   function cityLstDisplay(city) {
+    if (appMode === "project" && cityRunWarning(city)) return "⚠";
     if (appMode === "project") {
       const v = projectPrimaryMetric(city);
       return adapter?.formatPrimaryValueShort(v, activeProjectModelId(city)) ?? "—";
@@ -212,6 +352,7 @@
     if (cityLabel) {
       cityLabel.textContent = appMode === "project" ? "Your cities" : "11 cities";
     }
+    renderKeyQueries(appMode === "project" ? projectModelId : "lst");
   }
 
   function resolveAppMode() {
@@ -234,6 +375,8 @@
       key,
       name: entry.name || entry.address,
       color: entry.color || "#3d7ea6",
+      month: entry.month ?? null,
+      year: entry.year ?? null,
       model_id: entry.model_id || projectData.model_id || projectModelId,
       temp: projectPrimaryMetric({
         ...entry,
@@ -314,6 +457,27 @@
     });
   }
 
+  let tractLegendRange = null;
+
+  const LST_COLOR_STOPS = [
+    "#ffffcc",
+    "#ffeda0",
+    "#fed976",
+    "#feb24c",
+    "#fd8d3c",
+    "#fc4e2a",
+    "#e31a1c",
+    "#b10026",
+  ];
+
+  const LST_FIXED_SCALE = {
+    min: 25,
+    max: 45,
+    colors: ["#ffffb2", "#fed976", "#feb24c", "#fd8d3c", "#f03b20", "#e31a1c", "#bd0026", "#800026"],
+  };
+
+  let lstScaleMode = localStorage.getItem("gf_lst_scale_mode") === "fixed" ? "fixed" : "local";
+
   let map = null;
   let mapReady = false;
   let popup = null;
@@ -331,9 +495,176 @@
     return name.split(",")[0];
   }
 
+  function cityPeriodLabel(city) {
+    if (city?.month && city?.year) {
+      const names = [
+        "Jan",
+        "Feb",
+        "Mar",
+        "Apr",
+        "May",
+        "Jun",
+        "Jul",
+        "Aug",
+        "Sep",
+        "Oct",
+        "Nov",
+        "Dec",
+      ];
+      return `${names[city.month - 1] || city.month} ${city.year}`;
+    }
+    if (city?.year) return String(city.year);
+    return "";
+  }
+
+  function cityListLabel(city) {
+    const short = cityShort(city.name);
+    const period = cityPeriodLabel(city);
+    return period ? `${short} · ${period}` : short;
+  }
+
   function formatNumber(value) {
     if (value === null || value === undefined) return "—";
     return Number(value).toLocaleString();
+  }
+
+  function numericFieldValues(geojson, field) {
+    if (!geojson?.features?.length || !field) return [];
+    return geojson.features
+      .map((feature) => Number(feature.properties?.[field]))
+      .filter((value) => Number.isFinite(value));
+  }
+
+  function fieldValueRange(geojson, field) {
+    const values = numericFieldValues(geojson, field);
+    if (!values.length) return null;
+    values.sort((a, b) => a - b);
+    const actualMin = values[0];
+    const actualMax = values[values.length - 1];
+    const spread = actualMax - actualMin;
+
+    let scaleMin = actualMin;
+    let scaleMax = actualMax;
+    if (spread < 2 && values.length >= 5) {
+      const p10 = values[Math.floor(values.length * 0.1)];
+      const p90 = values[Math.floor(values.length * 0.9)];
+      if (p90 > p10) {
+        scaleMin = p10;
+        scaleMax = p90;
+      }
+    }
+    if (scaleMax - scaleMin < 0.25) {
+      const pad = Math.max(0.5, spread * 0.5 || 0.5);
+      scaleMin = actualMin - pad;
+      scaleMax = actualMax + pad;
+    }
+
+    return {
+      min: scaleMin,
+      max: scaleMax,
+      actualMin,
+      actualMax,
+    };
+  }
+
+  function buildRangeInterpolate(valueExpr, range, colors) {
+    const stops = colors.length;
+    const expr = ["interpolate", ["linear"], valueExpr];
+    for (let i = 0; i < stops; i += 1) {
+      const t = stops === 1 ? 0 : i / (stops - 1);
+      expr.push(range.min + t * (range.max - range.min));
+      expr.push(colors[i]);
+    }
+    return expr;
+  }
+
+  function updateLegendBar(colors) {
+    if (!legendBarEl) return;
+    const cells = legendBarEl.querySelectorAll(".gf-legend-cell");
+    cells.forEach((cell, index) => {
+      if (colors[index]) cell.style.background = colors[index];
+    });
+  }
+
+  function resetLegendBar() {
+    const defaults = ["#3d7ea6", "#74add1", "#abd9e9", "#f3c89b", "#e07b32", "#c45a1a", "#9b2226"];
+    updateLegendBar(defaults);
+  }
+
+  function usesLocalValueScale(field) {
+    return field === "lst_mean_C" || field === "lst_max_C" || (field && field.endsWith("_C"));
+  }
+
+  function isActiveLstChoroplethLayer() {
+    const layerId = activeMapLayerId();
+    const city = getCities()[activeCityIndex];
+    const pres = modelPresentation(activeProjectModelId(city));
+    const analysisId = pres.analysisLayerId || "lst";
+    return layerId === "lst" || layerId === analysisId;
+  }
+
+  function isLstScaleModel(modelId) {
+    return (modelId || "lst").toLowerCase() === "lst";
+  }
+
+  function isLstHeatmapLayerActive() {
+    if (appMode !== "project") return false;
+    if (!isActiveLstChoroplethLayer()) return false;
+    const city = getCities()[activeCityIndex];
+    if (city?.status !== "ready") return false;
+    const modelId = activeProjectModelId(city);
+    if (!isEquityDashboard(modelId)) return false;
+    if (!isLstScaleModel(modelId)) return false;
+    const pres = modelPresentation(modelId);
+    const field = activeChoroplethField();
+    return field === pres.choroplethField || field === "lst_mean_C";
+  }
+
+  function setChoroplethLayerEnabled(layerId, enabled) {
+    const row = document.querySelector(`.gf-layer-toggle[data-gf-layer="${layerId}"]`);
+    const toggle = row?.querySelector(".gf-toggle");
+    if (!toggle) return;
+    toggle.classList.toggle("on", enabled);
+    toggle.setAttribute("aria-checked", enabled ? "true" : "false");
+  }
+
+  function anyChoroplethLayerEnabled() {
+    return CHOROPLETH_LAYER_IDS.some((id) => layerEnabled(id));
+  }
+
+  function fixedLstFillPaint(valueExpr) {
+    return {
+      "fill-color": buildRangeInterpolate(
+        valueExpr,
+        { min: LST_FIXED_SCALE.min, max: LST_FIXED_SCALE.max },
+        LST_FIXED_SCALE.colors
+      ),
+      "fill-opacity": 0.82,
+    };
+  }
+
+  function updateLstScaleUI() {
+    if (!lstScaleWrapEl) return;
+    const show = isLstHeatmapLayerActive();
+    lstScaleWrapEl.hidden = !show;
+    lstScaleWrapEl.querySelectorAll("[data-gf-lst-scale]").forEach((btn) => {
+      btn.classList.toggle("is-active", btn.getAttribute("data-gf-lst-scale") === lstScaleMode);
+    });
+  }
+
+  function setLstScaleMode(mode) {
+    lstScaleMode = mode === "fixed" ? "fixed" : "local";
+    localStorage.setItem("gf_lst_scale_mode", lstScaleMode);
+    updateLstScaleUI();
+    refreshTractChoropleth();
+    updateLegend();
+  }
+
+  function refreshTractChoropleth() {
+    if (!map || !mapReady || !tractGeojsonCache.data) return;
+    const field = activeChoroplethField();
+    if (!field) return;
+    upsertTractLayers(tractGeojsonCache.data, field);
   }
 
   function layerEnabled(layerId) {
@@ -345,7 +676,7 @@
     for (const layerId of LAYER_ORDER) {
       if (layerEnabled(layerId)) return layerId;
     }
-    return "density";
+    return "lst";
   }
 
   function activeLayerLabel() {
@@ -353,7 +684,6 @@
     const city = getCities()[activeCityIndex];
     const modelId = activeProjectModelId(city);
     const pres = modelPresentation(modelId);
-    if (layerId === "worldpop") return "WorldPop gridded population";
     if (layerId === pres.analysisLayerId || layerId === "lst") {
       if (appMode === "project" && city?.status === "ready") return pres.analysisLayerLabel;
       return `${pres.legendLabel} (demo — density stand-in)`;
@@ -366,7 +696,6 @@
     const city = getCities()[activeCityIndex];
     const modelId = activeProjectModelId(city);
     const pres = modelPresentation(modelId);
-    if (layerId === "worldpop") return null;
     if (layerId === pres.analysisLayerId || layerId === "lst") {
       if (appMode === "project" && city?.status === "ready") {
         return (
@@ -382,7 +711,6 @@
   }
 
   function updateLegend() {
-    if (!legendTitleEl) return;
     const city = getCities()[activeCityIndex];
     const pres = modelPresentation(activeProjectModelId(city));
     const labels = {
@@ -390,15 +718,40 @@
       income: "Income",
       ethnicity: "Hispanic %",
       tracts: "Tracts",
-      worldpop: "WorldPop",
       lst: appMode === "project" ? pres.legendLabel : `${pres.legendLabel} demo`,
     };
     const layerId = activeMapLayerId();
-    legendTitleEl.textContent =
-      labels[layerId] || (layerId === pres.analysisLayerId ? pres.legendLabel : "Map");
+    const onLstLayer = isLstHeatmapLayerActive();
+    const localScale = onLstLayer && lstScaleMode === "local" && tractLegendRange;
+    const fixedLstScale = onLstLayer && lstScaleMode === "fixed";
+
+    if (legendTitleEl) {
+      if (localScale) {
+        legendTitleEl.textContent = `${labels[layerId] || pres.legendLabel} (local range)`;
+      } else if (fixedLstScale) {
+        legendTitleEl.textContent = `${labels[layerId] || pres.legendLabel} (fixed °C)`;
+      } else {
+        legendTitleEl.textContent =
+          labels[layerId] || (layerId === pres.analysisLayerId ? pres.legendLabel : "Map");
+      }
+    }
+    if (localScale) {
+      if (legendLowEl) legendLowEl.textContent = `${tractLegendRange.actualMin.toFixed(1)}°`;
+      if (legendHighEl) legendHighEl.textContent = `${tractLegendRange.actualMax.toFixed(1)}°`;
+      updateLegendBar(LST_COLOR_STOPS);
+    } else if (fixedLstScale) {
+      if (legendLowEl) legendLowEl.textContent = `${LST_FIXED_SCALE.min}°`;
+      if (legendHighEl) legendHighEl.textContent = `${LST_FIXED_SCALE.max}°`;
+      updateLegendBar(LST_FIXED_SCALE.colors);
+    } else {
+      if (legendLowEl) legendLowEl.textContent = "Low";
+      if (legendHighEl) legendHighEl.textContent = "High";
+      resetLegendBar();
+    }
+    updateLstScaleUI();
   }
 
-  function choroplethFillPaint(field) {
+  function choroplethFillPaint(field, valueRange) {
     if (!field) {
       return { "fill-color": "#5a9ab8", "fill-opacity": 0.78 };
     }
@@ -441,23 +794,14 @@
         "fill-opacity": 0.82,
       };
     }
-    if (field === "lst_mean_C") {
-      return {
-        "fill-color": [
-          "interpolate",
-          ["linear"],
-          value,
-          25,
-          "#ffffb2",
-          32,
-          "#fd8d3c",
-          38,
-          "#e31a1c",
-          45,
-          "#800026",
-        ],
-        "fill-opacity": 0.82,
-      };
+    if (usesLocalValueScale(field) && isActiveLstChoroplethLayer()) {
+      if (lstScaleMode === "local" && valueRange) {
+        return {
+          "fill-color": buildRangeInterpolate(value, valueRange, LST_COLOR_STOPS),
+          "fill-opacity": 0.82,
+        };
+      }
+      return fixedLstFillPaint(value);
     }
     return {
       "fill-color": [
@@ -712,8 +1056,9 @@
     clearTractHover();
     popup.remove();
 
+    tractLegendRange = usesLocalValueScale(field) ? fieldValueRange(geojson, field) : null;
     const fillPaint = {
-      ...choroplethFillPaint(field),
+      ...choroplethFillPaint(field, tractLegendRange),
       "fill-opacity": fillOpacityPaint(),
     };
     const outline = linePaint();
@@ -752,17 +1097,20 @@
       map.setPaintProperty("tracts-line", key, outline[key]);
     });
     map.setPaintProperty("tracts-line", "line-width", hoverOutline["line-width"]);
+    updateLegend();
   }
 
   async function renderActiveMapLayer() {
     if (!cityLayersData) return;
 
+    tractLegendRange = null;
     const layerId = activeMapLayerId();
     const city = getCities()[activeCityIndex];
     const modelId = activeProjectModelId(city);
     const summary = cityLayersData.summary || {};
 
     if (appMode === "project" && !isEquityDashboard(modelId)) {
+      updateMapWarning(city);
       if (mapOverlayEl) {
         mapOverlayEl.innerHTML = `
           <div class="gf-map-overlay-title">${city.name} · ${modelPresentation(modelId).legendLabel}</div>
@@ -781,11 +1129,14 @@
     if (mapEmptyEl) mapEmptyEl.classList.add("hidden");
 
     if (mapOverlayEl) {
+      const warning = appMode === "project" ? cityRunWarning(city) : null;
       mapOverlayEl.innerHTML = `
         <div class="gf-map-overlay-title">${city.name} · ${activeLayerLabel()}</div>
         <div class="gf-map-overlay-sub">${summary.county || ""} · ${formatNumber(summary.tract_count)} tracts · hover for details, click to zoom</div>
+        ${warning ? `<div class="gf-map-overlay-warning">${warning}</div>` : ""}
       `;
     }
+    updateMapWarning(city);
     updateLegend();
 
     if (!mapContainerEl || typeof maplibregl === "undefined") {
@@ -809,15 +1160,7 @@
         upsertTractLayers(geojson, field);
         refreshMapSize();
         fitMapBounds(cityLayersData.vector_layer?.bounds_wgs84);
-
-        if (layerId === "worldpop" && cityLayersData.worldpop?.preview_url) {
-          setRasterOverlay(
-            cityLayersData.worldpop.preview_url,
-            cityLayersData.worldpop.bounds_wgs84 || cityLayersData.vector_layer.bounds_wgs84
-          );
-        } else {
-          showVectorLayers();
-        }
+        showVectorLayers();
       } catch (error) {
         if (mapEmptyEl) {
           mapEmptyEl.textContent = error.message || "Could not render map.";
@@ -865,6 +1208,8 @@
             : `Multi-city ${modelPresentation(activeProjectModelId(city)).chatAnalysisLabel || "analysis"} project.`,
       stats: {
         active_city: city?.name,
+        observation_month: city?.month ?? null,
+        observation_year: city?.year ?? null,
         ...summary,
       },
       logs: cityLayersData ? JSON.stringify(cityLayersData.sources || {}) : "",
@@ -877,6 +1222,19 @@
       if (overview?.hottest_city) ctx.stats.hottest_city = overview.hottest_city;
     } else if (appMode === "project") {
       Object.assign(ctx.stats, adapter?.cityRunStats(city) || city?.lst_stats || {});
+      const warning = cityRunWarning(city);
+      if (warning) ctx.stats.tract_zonal_warning = warning;
+      ctx.project_cities = projectCityList
+        .filter((entry) => entry.status === "ready")
+        .map((entry) => ({
+          key: entry.key,
+          name: entry.name || entry.address,
+          address: entry.address,
+          month: entry.month ?? null,
+          year: entry.year ?? null,
+          run_stats: entry.run_stats || entry.lst_stats || {},
+          summary: entry.summary || {},
+        }));
     }
     return ctx;
   }
@@ -899,6 +1257,7 @@
     tractGeojsonCache = { token: null, data: null };
     if (mapLoadingEl) mapLoadingEl.hidden = true;
     updateStats();
+    updateMapWarning(projectCityList.find((c) => c.key === cityKey) || entry);
     await renderActiveMapLayer();
     return cityLayersData;
   }
@@ -994,14 +1353,21 @@
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "gf-city-btn" + (index === activeCityIndex ? " active" : "");
-      const status =
+      const warning = appMode === "project" ? cityRunWarning(city) : null;
+      const statusKey =
         appMode === "project" && city.status
-          ? `<span class="gf-city-status gf-city-status-${city.status}">${city.status}</span>`
+          ? warning
+            ? "warn"
+            : city.status
+          : null;
+      const status =
+        statusKey
+          ? `<span class="gf-city-status gf-city-status-${statusKey}">${warning ? "needs review" : city.status}</span>`
           : "";
       btn.innerHTML = `
         <span class="gf-city-btn-left">
           <span class="gf-city-dot" style="background:${city.color}"></span>
-          ${cityShort(city.name)}${status}
+          ${cityListLabel(city)}${status}
         </span>
         <span class="gf-temp-pill" style="background:${city.color}22;color:${city.color}">${cityLstDisplay(city)}</span>
       `;
@@ -1050,7 +1416,7 @@
       const temp = appMode === "project" ? projectPrimaryMetric(city) : city.temp;
       const unit = appMode === "project" ? modelPresentation(activeProjectModelId(city)).metricUnit : "°C";
       cell.innerHTML = `
-        <div class="gf-mini-city-name">${cityShort(city.name)}</div>
+        <div class="gf-mini-city-name">${cityListLabel(city)}</div>
         <div class="gf-mini-city-temp" style="color:${city.color}">${temp != null ? `${temp}${unit}` : "—"}</div>
         <div class="gf-mini-city-state muted">${city.name.split(", ")[1] || ""}</div>
       `;
@@ -1132,10 +1498,179 @@
     }
   }
 
-  function wireControls() {
-    document.querySelectorAll("[data-gf-prompt]").forEach((btn) => {
-      btn.addEventListener("click", () => askQuestion(btn.dataset.gfPrompt || ""));
+  function reportChatPairs(maxPairs) {
+    const limit = maxPairs ?? 5;
+    const pairs = [];
+    for (let i = 0; i < chatMessages.length; i += 1) {
+      if (chatMessages[i].role !== "user") continue;
+      const answer = chatMessages[i + 1]?.role === "assistant" ? chatMessages[i + 1].text : "";
+      pairs.push({ question: chatMessages[i].text, answer });
+    }
+    return pairs.slice(-limit);
+  }
+
+  function parseReportError(response, payload) {
+    if (response?.status === 405) {
+      return "Report export is not available on the running server. Stop python serve.py, start it again, then retry.";
+    }
+    if (typeof payload.detail === "string") return payload.detail;
+    return "Could not generate report.";
+  }
+
+  async function exportReport() {
+    if (appMode !== "project" || !projectId) {
+      chatMessages.push({
+        role: "assistant",
+        text: "PDF reports are available for your own project runs. Upload and process cities on Step 1, then return here to export.",
+      });
+      renderChat();
+      switchPanelTab("chat");
+      return;
+    }
+
+    const city = getCities()[activeCityIndex];
+    if (!city?.key || city.status !== "ready") {
+      chatMessages.push({
+        role: "assistant",
+        text: "Select a ready city with completed analysis before exporting a report.",
+      });
+      renderChat();
+      switchPanelTab("chat");
+      return;
+    }
+
+    const exportBtn = document.getElementById("gfExportBtn");
+    const priorLabel = exportBtn?.textContent;
+    if (exportBtn) {
+      exportBtn.disabled = true;
+      exportBtn.textContent = "Generating PDF…";
+    }
+
+    try {
+      const response = await fetch(`/api/projects/${projectId}/report`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          city_key: city.key,
+          chat: reportChatPairs(5),
+          max_chat_pairs: 5,
+        }),
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        chatMessages.push({
+          role: "assistant",
+          text: parseReportError(response, payload),
+        });
+        renderChat();
+        switchPanelTab("chat");
+        return;
+      }
+
+      const blob = await response.blob();
+      const disposition = response.headers.get("Content-Disposition") || "";
+      const match = disposition.match(/filename="?([^";]+)"?/i);
+      const filename = match?.[1] || `${projectData?.name || "report"}.pdf`;
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = filename;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      chatMessages.push({
+        role: "assistant",
+        text: "Network error while generating the report. Check that the server is running.",
+      });
+      renderChat();
+      switchPanelTab("chat");
+    } finally {
+      if (exportBtn) {
+        exportBtn.disabled = false;
+        exportBtn.textContent = priorLabel || "Export PDF report";
+      }
+    }
+  }
+
+  function wirePanelResize() {
+    const panel = document.getElementById("gfRightPanel");
+    const handle = document.getElementById("gfPanelResizeHandle");
+    if (!panel || !handle || handle.dataset.gfResizeWired === "1") return;
+    handle.dataset.gfResizeWired = "1";
+
+    const PANEL_WIDTH_KEY = "gf_panel_width";
+    const PANEL_MIN = 250;
+    const PANEL_MAX = 560;
+
+    function clampWidth(value) {
+      const max = Math.min(PANEL_MAX, Math.floor(window.innerWidth * 0.55));
+      return Math.min(max, Math.max(PANEL_MIN, value));
+    }
+
+    function applyPanelWidth(px) {
+      const width = clampWidth(px);
+      panel.style.width = `${width}px`;
+      document.documentElement.style.setProperty("--gf-panel-width", `${width}px`);
+      localStorage.setItem(PANEL_WIDTH_KEY, String(width));
+      if (document.getElementById("page-gfframe")?.classList.contains("active")) {
+        refreshMapSize();
+      }
+    }
+
+    const saved = Number.parseInt(localStorage.getItem(PANEL_WIDTH_KEY) || "", 10);
+    if (!Number.isNaN(saved)) applyPanelWidth(saved);
+
+    let dragging = false;
+    let startX = 0;
+    let startWidth = 0;
+
+    function stopDrag(event) {
+      if (!dragging) return;
+      dragging = false;
+      handle.classList.remove("is-dragging");
+      document.body.classList.remove("gf-panel-resizing");
+      if (event?.pointerId != null && handle.releasePointerCapture) {
+        try {
+          handle.releasePointerCapture(event.pointerId);
+        } catch {
+          /* pointer already released */
+        }
+      }
+    }
+
+    handle.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
+      dragging = true;
+      startX = event.clientX;
+      startWidth = panel.getBoundingClientRect().width;
+      handle.classList.add("is-dragging");
+      document.body.classList.add("gf-panel-resizing");
+      handle.setPointerCapture(event.pointerId);
+      event.preventDefault();
     });
+
+    handle.addEventListener("pointermove", (event) => {
+      if (!dragging) return;
+      applyPanelWidth(startWidth + (startX - event.clientX));
+    });
+
+    handle.addEventListener("pointerup", stopDrag);
+    handle.addEventListener("pointercancel", stopDrag);
+
+    handle.addEventListener("dblclick", () => {
+      applyPanelWidth(PANEL_MIN);
+    });
+  }
+
+  function wireControls() {
+    if (keyQueriesEl) {
+      keyQueriesEl.addEventListener("click", (event) => {
+        const btn = event.target.closest("button[data-gf-prompt]");
+        if (!btn) return;
+        askQuestion(btn.dataset.gfPrompt || "");
+      });
+    }
 
     document.querySelectorAll(".gf-panel-tab").forEach((tab) => {
       tab.addEventListener("click", () => switchPanelTab(tab.dataset.gfTab || "chat"));
@@ -1143,13 +1678,32 @@
 
     document.querySelectorAll(".gf-layer-toggle").forEach((row) => {
       const toggle = row.querySelector(".gf-toggle");
-      if (toggle) {
-        toggle.addEventListener("click", () => {
-          toggle.classList.toggle("on");
-          renderActiveMapLayer();
-        });
-      }
+      const layerId = row.dataset.gfLayer;
+      if (!toggle || !CHOROPLETH_LAYER_IDS.includes(layerId)) return;
+      toggle.addEventListener("click", () => {
+        const enabling = !toggle.classList.contains("on");
+        if (enabling) {
+          CHOROPLETH_LAYER_IDS.forEach((id) => setChoroplethLayerEnabled(id, id === layerId));
+        } else {
+          setChoroplethLayerEnabled(layerId, false);
+          if (!anyChoroplethLayerEnabled()) {
+            setChoroplethLayerEnabled("lst", true);
+          }
+        }
+        updateLstScaleUI();
+        renderActiveMapLayer();
+      });
     });
+
+    if (lstScaleWrapEl) {
+      lstScaleWrapEl.addEventListener("click", (event) => {
+        const btn = event.target.closest("[data-gf-lst-scale]");
+        if (!btn) return;
+        event.preventDefault();
+        const mode = btn.getAttribute("data-gf-lst-scale") || "local";
+        setLstScaleMode(mode);
+      });
+    }
 
     if (sendBtnEl) {
       sendBtnEl.addEventListener("click", () => {
@@ -1169,9 +1723,7 @@
     }
 
     document.getElementById("gfExportBtn")?.addEventListener("click", () => {
-      askQuestion(
-        "Generate a full PDF report for all 11 cities comparing LST, income, and ethnicity data"
-      );
+      exportReport();
     });
 
     document.getElementById("gfZoomIn")?.addEventListener("click", () => map?.zoomIn({ duration: 200 }));
@@ -1186,6 +1738,8 @@
         refreshMapSize();
       }
     });
+
+    wirePanelResize();
   }
 
   let uiWired = false;
