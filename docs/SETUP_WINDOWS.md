@@ -380,7 +380,7 @@ If you downloaded a **new ZIP** from GitHub to get updates, extract it to a new 
 
 ---
 
-## Checklist (print or follow along)
+## Checklist 
 
 - Downloaded ZIP from [https://github.com/manyas207/Geospatial-GUI](https://github.com/manyas207/Geospatial-GUI) and extracted it
 - Installed Python 3.10+ with **Add to PATH**
