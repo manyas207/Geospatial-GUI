@@ -36,7 +36,7 @@ def verify_ui_files() -> None:
         raise FileNotFoundError(f"Missing {index_path}")
 
     html = index_path.read_text(encoding="utf-8")
-    markers = ('class="brand-title"', 'id="askRunCityLst"', 'id="page-gfframe"', "gf_frame.js")
+    markers = ('class="brand-title"', 'id="askRunCity"', 'id="page-gfframe"', "gf_frame.js")
     if not all(m in html for m in markers):
         raise RuntimeError(
             f"{index_path} looks like the old layout. "

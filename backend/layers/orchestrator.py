@@ -1,4 +1,4 @@
-"""Orchestrate geocode → Census ACS + tract boundaries → GeoPackage + map PNGs + WorldPop."""
+"""Orchestrate geocode → Census ACS + tract boundaries → GeoPackage + map PNGs."""
 
 from __future__ import annotations
 
@@ -17,7 +17,6 @@ from backend.core.json_util import to_json_safe
 from backend.layers.map_render import render_tract_map
 from backend.core.presets import DEMO_CITY_ADDRESSES, DEMO_CITY_LST
 from backend.layers.tracts import fetch_tract_geojson
-from backend.layers.worldpop import bounds_from_geojson, get_or_create_worldpop_preview
 
 MAP_LAYER_SPECS = [
     ("tracts", None, "viridis", "Census tracts"),
@@ -248,21 +247,6 @@ def load_city_layers(address: str, *, cache_dir: Path) -> dict:
     map_previews = _build_map_previews(geojson, address, cache_dir)
     vector_layer = _ensure_vector_layer(geojson, address, cache_dir)
 
-    bounds = bounds_from_geojson(geojson)
-    worldpop_path, worldpop_meta = get_or_create_worldpop_preview(bounds, cache_dir)
-
-    worldpop_preview_url = None
-    if worldpop_path and worldpop_path.exists():
-        worldpop_token = encode_preview_token(worldpop_path, cache_dir)
-        worldpop_preview_url = f"/api/city-layers/worldpop/{worldpop_token}/preview"
-        worldpop_meta = {
-            **worldpop_meta,
-            "preview_url": worldpop_preview_url,
-            "bounds_wgs84": list(bounds),
-        }
-    else:
-        worldpop_meta = {**worldpop_meta, "preview_url": None, "bounds_wgs84": list(bounds)}
-
     summary = _summary_stats(geojson, geocode)
     tract_source = "Census TIGER shapefile (cached)" if (cache_dir / "tiger").exists() else "Census TIGER"
 
@@ -273,7 +257,6 @@ def load_city_layers(address: str, *, cache_dir: Path) -> dict:
         "summary": summary,
         "map_layers": map_previews,
         "vector_layer": vector_layer,
-        "worldpop": worldpop_meta,
         "sources": {
             "geocoder": "Census Geocoder API",
             "tracts": tract_source,
@@ -284,7 +267,6 @@ def load_city_layers(address: str, *, cache_dir: Path) -> dict:
                 if _render_png_maps()
                 else "MapLibre vector choropleth (client)"
             ),
-            "gridded_population": worldpop_meta.get("source", "WorldPop"),
         },
     }
     _save_demo_snapshot(address, result, cache_dir)

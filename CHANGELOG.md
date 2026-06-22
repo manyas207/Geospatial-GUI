@@ -2,6 +2,34 @@
 
 All notable changes to this project are documented here.
 
+## 2026-06-22
+
+### Added
+
+- **Model plugins (frontend)** — `web/model_plugin.js` contract; per-model `web/plugins/lst_plugin.js` and `web/plugins/obia_plugin.js` own presentation, map legend/paint, stats cards, key queries, and tract popups. Registered in `web/dashboard_adapter.js` (ES module).
+- **Adding-a-model guide** — [docs/ADDING_A_MODEL.md](docs/ADDING_A_MODEL.md) (backend `ModelSpec`, tract zonal join, frontend plugin, testing).
+- **Split Heat & Equity frame** — `web/gf_frame_shared.js`, `web/gf_frame_map.js`, `web/gf_frame_chat.js` (map, chat, shared state); `web/gf_frame.js` remains the shell entry point.
+- **Ask two-step workflow** — Step 1 **Add city to project**, then Step 2 **Run analysis** (run button appears only after the city is registered for the current address/period).
+
+### Changed
+
+- **`models/registry.py`** — register LST and OBIA the same way (direct imports; fail fast if a model cannot load).
+- **`web/dashboard_adapter.js`** — loads plugins instead of a single inline `PRESENTATION` map; merges API `GET /api/models` metadata with plugin presentation.
+- **Ask progress bar** — per-model step labels (`MODEL_RUN_STEPS` in `web/app.js`) and progress detail text from plugin fields `runProgressWorking` / `runProgressStart` (no longer hardcoded to OBIA).
+- **`models/lst_model.py`** — city manifest no longer includes unused `worldpop` layer payload.
+
+### Fixed
+
+- **`city_run_stats` import** — public helper restored in `backend/projects/service.py` (fixes `ImportError` on `python serve.py` after partial git restores).
+- **`models/lst_core.py`** — avoid `np.mean` on empty `ref_temps_C` during dashboard uploads (removes NumPy “mean of empty slice” warning; does not change LST pixel values).
+- **Stale server process** — after pulling backend changes, restart `python serve.py` (only one process on port **8765**). Hard-refresh the browser (`Ctrl+Shift+R`) for `app.js` / `index.html` cache bust.
+
+### Removed
+
+- **WorldPop integration** — removed unused gridded-population layer (`backend/layers/worldpop.py`, API preview route, manifest/UI fields).
+
+- **`POST /api/projects/{id}/cities/{key}/lst`** — unused legacy alias; use `POST .../run?model=lst` instead.
+
 ## 2026-06-18 (backend reorganization, OBIA, reports, UI)
 
 ### Added

@@ -154,7 +154,6 @@ def _post_process_obia(result: ModelResult, ctx: RunContext) -> PostProcessResul
         vector_fields=list(OBIA_VECTOR_FIELDS),
         city_fields={
             "summary": layers.get("summary") or {},
-            "worldpop": layers.get("worldpop") or {},
             "map_layers": layers.get("map_layers") or {},
             "geocode": layers.get("geocode") or {},
             "bounds_wgs84": [float(west), float(south), float(east), float(north)],

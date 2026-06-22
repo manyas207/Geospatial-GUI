@@ -1,5 +1,19 @@
 __pycache__/
 *.py[cod]
 .env
+.venv/
+venv/
+
 data/
-Untitled
+
+# Generated OBIA sample artifacts — run scripts/generate_obia_sample_data.py locally
+sample_data/**/obia_output/
+sample_data/**/*.tif
+sample_data/**/*.gpkg
+sample_data/**/*.shp
+sample_data/**/*.shx
+sample_data/**/*.dbf
+sample_data/**/*.prj
+sample_data/**/*.cpg
+
+.DS_Store

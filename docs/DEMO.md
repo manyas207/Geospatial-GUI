@@ -33,14 +33,15 @@ Stakeholder-friendly script for presenting the Geospatial GUI locally.
 ## Ask → Heat & Equity (production)
 
 1. Open **Ask** (the only nav item until you have processed data).
-2. Select **Land Surface Temperature** in the **Analysis model** dropdown (only model today; list comes from `GET /api/models`).
+2. Select an **Analysis model** (LST or OBIA; list from `GET /api/models`).
 3. Enter a US city address in **City, ST** form (e.g. `Round Rock, TX`).
-4. Upload Landsat GeoTIFFs (`ST_B10`, `SR_B4`, `SR_B5`) — file hints update per model.
-5. Click **Add city to project**, then **Run LST for city**. You are **redirected automatically** to **Your project** when the run completes.
-6. Explore maps, charts, and chat. Use **Back to Ask** to upload another city.
-7. **New project** clears the portfolio and returns you to Ask (required to switch analysis models).
+4. Upload inputs — file hints update per model (Landsat bands for LST; raster + training shapefile for OBIA).
+5. Click **Add city to project** (step 1). The **Run** button (step 2) appears after the city is registered.
+6. Click **Run LST for city** or **Run OBIA for city** (label follows the selected model). You are **redirected automatically** to **Your project** when the run completes.
+7. Explore maps, charts, and chat. Use **Back to Ask** to upload another city.
+8. **New project** clears the portfolio and returns you to Ask (required to switch analysis models).
 
-**Talking points:** Pluggable model platform (LST first); real per-tract LST from uploads; live Census ACS; cross-city comparison in chat when ≥2 cities are ready.
+**Talking points:** Pluggable model platform (LST + OBIA); real per-tract outputs from uploads; live Census ACS; cross-city comparison in chat when ≥2 cities are ready.
 
 ## Demo mode (11 cities)
 
@@ -54,6 +55,9 @@ Stakeholder-friendly script for presenting the Geospatial GUI locally.
 |---------|-----|
 | Heat & Equity nav missing | Run analysis for at least one city on **Ask** first |
 | Model dropdown empty | Restart `serve.py`; check `GET /api/models` in browser or `/docs` |
+| Run button missing on Ask | Click **Add city to project** first — run is step 2 |
+| Port 8765 already in use | Stop the other `python serve.py` (Task Manager or close the PowerShell window) |
+| `ImportError: city_run_stats` on startup | Pull latest code; restart server (export restored in `backend/projects/service.py`) |
 | Could not geocode address | Use `City, ST` (e.g. `Round Rock, TX`); fix typos; include state for ambiguous names |
 | Chat says "Could not get an answer" | Hard-refresh the page; if it persists, check server logs for `422` on `/api/followup` |
 | Demographics show dashes | Set `CENSUS_API_KEY` in `.env` and restart `serve.py` |

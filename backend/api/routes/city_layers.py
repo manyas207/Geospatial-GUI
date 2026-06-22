@@ -48,11 +48,6 @@ async def city_map_preview(token: str) -> FileResponse:
     return city_png_preview(token)
 
 
-@router.get("/api/city-layers/worldpop/{token}/preview")
-async def city_worldpop_preview(token: str) -> FileResponse:
-    return city_png_preview(token)
-
-
 @router.get("/api/city-layers/vector/{token}/geojson")
 async def city_vector_geojson(token: str) -> JSONResponse:
     try:

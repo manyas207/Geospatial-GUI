@@ -2,23 +2,24 @@
 
 from __future__ import annotations
 
-import logging
-
 from models.contract import ModelSpec
 from models.lst_model import LST_MODEL
+from models.obia_model import OBIA_MODEL
 
-logger = logging.getLogger(__name__)
+#from models.model3_model import MODEL3_MODEL
 
 _MODELS: dict[str, ModelSpec] = {
     LST_MODEL.id: LST_MODEL,
+    OBIA_MODEL.id: OBIA_MODEL,
+    #MODEL3_MODEL.id: MODEL3_MODEL,
 }
 
-try:
-    from models.obia_model import OBIA_MODEL
+DEFAULT_MODEL_ID = LST_MODEL.id
 
-    _MODELS[OBIA_MODEL.id] = OBIA_MODEL
-except Exception as exc:  # noqa: BLE001 — optional model; keep LST available
-    logger.warning("OBIA model could not be loaded: %s", exc)
+
+def resolve_model_id(model_id: str | None) -> str:
+    """Return a normalized model id, defaulting when omitted."""
+    return (model_id or DEFAULT_MODEL_ID).strip().lower()
 
 
 def get_model(model_id: str) -> ModelSpec:

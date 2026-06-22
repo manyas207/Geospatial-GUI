@@ -106,6 +106,8 @@ Create an empty multi-city project.
 
 **Response:** manifest with `id`, `model_id`, `cities`, `ready_count`, `preset_cities`.
 
+The Ask tab auto-creates a project on first use if none is stored locally. There is no list-all-projects endpoint — one active project id is kept in browser `localStorage`.
+
 ### `GET /api/projects/presets`
 
 Returns the 11 preset cities (key, name, color, `peak_lst_C`, `month`) used by the Demo tab and Heat & Equity.
@@ -132,17 +134,11 @@ Run a registered analysis model on uploaded files for one city.
 
 **Content-Type:** `multipart/form-data` — field `files` (one or more files per model `input_schema`).
 
-**Response:** updated project manifest.
+**Response:** updated project manifest (city `status` becomes `processing` immediately).
 
-### `POST /api/projects/{project_id}/cities/{city_key}/lst`
+The run executes in a **background task**. Poll `GET /api/projects/{project_id}` until the city `status` is `ready` or `error`. The Ask tab does this automatically and shows model-specific progress messages (LST vs OBIA step labels).
 
-Legacy alias for `POST .../run?model=lst`.
-
-Upload Landsat GeoTIFFs (`ST_B10`, `SR_B4`, `SR_B5`) for one registered city. Runs LST pipeline, loads census tracts, zonal-joins `lst_mean_C` per tract.
-
-**Content-Type:** `multipart/form-data` — field `files` (one or more `.tif`).
-
-**Response:** updated project manifest.
+For LST (`model=lst`), upload Landsat GeoTIFFs (`ST_B10`, `SR_B4`, `SR_B5`). The pipeline zonal-joins `lst_mean_C` per tract when enrichment applies.
 
 ### `GET /api/projects/{project_id}/cities/{city_key}/geojson`
 
@@ -168,7 +164,7 @@ Load census tract boundaries, ACS demographics, and map layer metadata for a US 
 
 **Requires:** `CENSUS_API_KEY` in environment.
 
-**Response:** `CityLayersResponse` with `summary`, `vector_layer` (GeoJSON/GPKG URLs), `worldpop`, and `map_layers`.
+**Response:** `CityLayersResponse` with `summary`, `vector_layer` (GeoJSON/GPKG URLs), and `map_layers`.
 
 ### `GET /api/city-layers/demo-portfolio?warm=true`
 
@@ -185,10 +181,6 @@ Downloads the cached `.gpkg` file (SQLite/GeoPackage).
 ### `GET /api/city-layers/map/{token}/preview`
 
 Returns PNG choropleth when `CITY_LAYERS_RENDER_PNG=true` in `.env` (optional; MapLibre is default).
-
-### `GET /api/city-layers/worldpop/{token}/preview`
-
-Returns PNG preview of WorldPop gridded population clipped to county bounds.
 
 Tract queries run automatically inside `POST /api/followup` when `context.tract_layer_token` is set.
 

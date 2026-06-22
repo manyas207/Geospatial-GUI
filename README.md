@@ -1,6 +1,6 @@
 # Geospatial GUI
 
-Terminal-launched web dashboard for **pluggable geospatial analysis models** (LST is the first), multi-city projects, and the **Heat & Equity** GUI Frame with live census and population layers.
+Terminal-launched web dashboard for **pluggable geospatial analysis models** (LST and OBIA today), multi-city projects, and the **Heat & Equity** GUI Frame with live census tract layers.
 
 Users choose a model on **Ask**, upload inputs, run analysis, and explore results on an adapter-driven dashboard with optional LLM chat.
 
@@ -66,11 +66,11 @@ Open that URL in your browser. The API docs are at http://127.0.0.1:8765/docs
 
 | Tab | What to do |
 |-----|------------|
-| **Ask** | Choose an **analysis model** (LST or OBIA), enter a US city as `City, ST`, upload required files, run analysis (progress bar while processing) |
+| **Ask** | Choose an **analysis model** (LST or OBIA), enter a US city as `City, ST`, upload files, **Add city to project**, then **Run** (model-aware progress bar) |
 | **Demo** | Open the 11-city Heat & Equity preview (no uploads needed) |
 | **Your project** | Appears after your first city finishes processing |
 
-**Ask → Your project:** pick a model → upload inputs → after the run completes you are taken to the dashboard with per-tract results (e.g. `lst_mean_C` for LST, `obia_mode_class` for OBIA).
+**Ask → Your project:** pick a model → add city → upload inputs → run analysis → after completion you are taken to the dashboard with per-tract results (e.g. `lst_mean_C` for LST, `obia_mode_class` for OBIA).
 
 Restart `python serve.py` after pulling code changes (`serve.py` does not auto-reload). Hard-refresh the browser (`Ctrl+Shift+R`) if the UI looks stale.
 
@@ -211,9 +211,14 @@ Geospatial-GUI-1/
 ├── backend/              # FastAPI routes and API clients
 ├── models/               # Analysis model plugins (contract, registry, lst_model, …)
 ├── web/                  # Static frontend (HTML, CSS, JS)
-│   ├── dashboard_adapter.js  # Model list + per-model dashboard presentation
-│   ├── app.js            # Ask tab (model picker, uploads)
-│   ├── gf_frame.js       # Heat & Equity dashboard
+│   ├── dashboard_adapter.js  # Model list + plugin registry (ES module)
+│   ├── model_plugin.js       # Frontend plugin contract
+│   ├── plugins/              # Per-model presentation (lst_plugin.js, obia_plugin.js)
+│   ├── app.js                # Ask tab (model picker, two-step add/run)
+│   ├── gf_frame.js           # Heat & Equity shell
+│   ├── gf_frame_shared.js    # Shared dashboard state
+│   ├── gf_frame_map.js       # MapLibre map + layers
+│   ├── gf_frame_chat.js      # Chat + PDF export
 │   └── vendor/maplibre-gl/
 ├── data/                 # Uploads and caches (gitignored)
 └── docs/                 # Architecture, API, models, data, demo guides
@@ -224,7 +229,8 @@ Geospatial-GUI-1/
 | Doc | Description |
 |-----|-------------|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System design and module map |
-| [docs/MODELS.md](docs/MODELS.md) | Model plugin contract and lab onboarding |
+| [docs/MODELS.md](docs/MODELS.md) | Registered models and OBIA/LST reference |
+| [docs/ADDING_A_MODEL.md](docs/ADDING_A_MODEL.md) | End-to-end guide to adding a new model |
 | [docs/API.md](docs/API.md) | REST endpoint reference |
 | [docs/DATA.md](docs/DATA.md) | Data folders, caches, external APIs |
 | [docs/DEMO.md](docs/DEMO.md) | Stakeholder demo walkthrough |
@@ -242,7 +248,7 @@ Registered models are listed at `GET /api/models`. The Ask tab loads this list a
 | **LST** (`lst`) | Landsat `ST_B10`, `SR_B4`, and `SR_B5` GeoTIFFs per city |
 | **OBIA** (`obia`) | Multispectral GeoTIFF + training shapefile (`.shp`, `.shx`, `.dbf`; class column such as `class_id`) |
 
-To add a new lab model, see [docs/MODELS.md](docs/MODELS.md).
+To add a new lab model, see **[docs/ADDING_A_MODEL.md](docs/ADDING_A_MODEL.md)** (summary in [docs/MODELS.md](docs/MODELS.md)).
 
 Enter each city as **City, ST** on the Ask tab (e.g. `Round Rock, TX`). Geocoding uses Census, then OpenStreetMap Nominatim as a fallback.
 

@@ -48,7 +48,7 @@ Geospatial-GUI-1/
 | Pipeline output | Temp under uploads | GeoTIFF | `models/*_model.py` via registry |
 | Enriched tracts | `tracts.gpkg`, `tracts.geojson` | Vector | Model `post_process` (e.g. `backend/lst_zonal.py`) |
 
-The Ask tab loads required inputs from `GET /api/models` and runs `POST .../run?model={id}`.
+The Ask tab loads required inputs from `GET /api/models`, registers cities with `POST /api/projects/{id}/cities`, then runs `POST .../run?model={id}`. Workflow is two steps: **Add city to project**, then **Run analysis** (run button appears after the city is registered).
 
 **LST** expects Landsat Collection 2 bands (`ST_B10`, `SR_B4`, `SR_B5`) in one request.
 
@@ -62,7 +62,6 @@ The Ask tab loads required inputs from `GET /api/models` and runs `POST .../run?
 | Tract boundaries | `tiger_tracts.py` | [Census TIGER shapefiles](https://www.census.gov/geographies/mapping-files/time-series/geo/tiger-line-file.html) | Yes — `data/city_layers_cache/tiger/` |
 | Demographics | `census_api.py` | [Census ACS API](https://api.census.gov/data/) | No (merged in memory) |
 | Map images | `map_render.py` | — (server render) | Yes — `data/city_layers_cache/maps/` |
-| Gridded population | `worldpop_raster.py` | [WorldPop USA 2020 COG](https://www.worldpop.org/) | Yes — PNG in `city_layers_cache/` |
 
 **ACS variables used (tract level):**
 
@@ -134,7 +133,6 @@ Remove-Item -Recurse -Force data\city_layers_cache
 | OpenStreetMap Nominatim | No | Geocode fallback for `City, ST` addresses when Census returns no match |
 | Census ACS | Yes (`CENSUS_API_KEY`) | City-layers and demo portfolio |
 | Census TIGER shapefiles | No | First request per state |
-| WorldPop COG (HTTPS) | No | WorldPop layer toggle |
 | Ollama | No (local) | Dashboard chat |
 
 ---

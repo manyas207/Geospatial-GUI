@@ -1,93 +1,47 @@
 <!DOCTYPE html>
-
 <html lang="en">
-
   <head>
-
     <meta charset="utf-8" />
-
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-
     <title>Geospatial Dashboard</title>
-
-    <link rel="stylesheet" href="app.css?v=25" />
-
+    <link rel="stylesheet" href="app.css?v=26" />
     <link rel="stylesheet" href="vendor/maplibre-gl/maplibre-gl.css" />
-
   </head>
-
   <body>
-
     <div class="app">
-
       <nav class="sidebar" aria-label="Main navigation">
-
         <div class="brand">
-
           <h1 class="brand-title">Geospatial Dashboard</h1>
-
         </div>
-
         <div class="nav-group">
-
           <button type="button" class="nav-btn active" data-page="ask">
-
             <span class="nav-label">Ask</span>
-
           </button>
-
           <button type="button" class="nav-btn" data-page="gfframe" data-gf-mode="demo" id="navDemo">
-
             <span class="nav-label">Demo</span>
-
           </button>
-
           <button type="button" class="nav-btn" data-page="gfframe" data-gf-mode="project" id="navGfframe" hidden>
-
             <span class="nav-label">Your project</span>
-
           </button>
-
         </div>
-
-        <p class="sidebar-foot">Ask to upload · Demo for preview</p>
-
       </nav>
 
-
-
       <div class="workspace" id="workspace">
-
         <header class="topbar">
-
           <div>
-
             <p class="page-eyebrow" id="pageEyebrow">Workflow</p>
-
             <h2 class="page-title" id="pageTitle">Ask a question</h2>
-
           </div>
-
           <p class="status" id="status" role="status" aria-live="polite"></p>
-
         </header>
 
-
-
         <main class="main">
-
           <section id="page-ask" class="page active">
-
             <p class="page-lede" id="askLede">
-
-              Choose an analysis model, upload inputs per city, and build your portfolio. After the first city completes processing, you are taken to the dashboard automatically.
-
+              Choose a model, add a city to your project, upload inputs, then run analysis. After the first city completes, you are taken to the dashboard automatically.
             </p>
-
             <div class="ask-layout">
-
               <article class="card ask-form-card">
-
                 <header class="ask-card-header">
                   <div class="ask-card-header-text">
                     <h3 class="card-title" id="askCardTitle">Run analysis for a city</h3>
@@ -95,7 +49,6 @@
                   </div>
                   <span class="ask-step-badge">Upload</span>
                 </header>
-
                 <section class="ask-form-section">
                   <h4 class="ask-section-label">Analysis model</h4>
                   <label class="field">
@@ -106,7 +59,6 @@
                     Model is locked for this project. Click <strong>Start new project</strong> to choose OBIA or another model.
                   </p>
                 </section>
-
                 <section class="ask-form-section">
                   <h4 class="ask-section-label">City &amp; observation period</h4>
                   <label class="field">
@@ -125,7 +77,6 @@
                   </div>
                   <p class="ask-field-hint">Tag each upload with a year or month to compare the same city over time.</p>
                 </section>
-
                 <section class="ask-form-section ask-form-section-last">
                   <h4 class="ask-section-label">Input files</h4>
                   <div class="file-upload">
@@ -146,12 +97,17 @@
                     <button type="button" class="file-clear-btn hidden" id="askProjectFileClear">Clear all files</button>
                   </div>
                 </section>
-
-                <div class="ask-form-actions">
+                <div class="ask-form-actions ask-form-actions-step">
+                  <span class="ask-step-badge ask-step-badge-inline">1</span>
                   <button type="button" class="run-btn run-btn-secondary" id="askAddCity">Add city to project</button>
-                  <button type="button" class="run-btn" id="askRunCityLst">Run analysis for city</button>
                 </div>
-
+                <div class="ask-form-actions ask-form-actions-step ask-form-actions-run" id="askRunCitySection" hidden>
+                  <span class="ask-step-badge ask-step-badge-inline">2</span>
+                  <div class="ask-form-actions-run-inner">
+                    <button type="button" class="run-btn" id="askRunCity">Run analysis for city</button>
+                    <p class="ask-run-city-hint muted" id="askRunCityHint">Upload input files above, then run analysis for this city.</p>
+                  </div>
+                </div>
                 <div class="ask-run-progress" id="askRunProgress" hidden aria-live="polite">
                   <div class="ask-run-progress-header">
                     <span class="ask-run-progress-label" id="askRunProgressLabel">Running analysis…</span>
@@ -162,225 +118,126 @@
                   </div>
                   <p class="ask-run-progress-detail muted" id="askRunProgressDetail">This may take several minutes for large rasters.</p>
                 </div>
-
               </article>
 
               <article class="card ask-portfolio-card">
-
                 <header class="ask-portfolio-header">
                   <div class="ask-portfolio-heading">
                     <h3 class="card-title">City portfolio</h3>
-                    <p class="muted ask-project-hint" id="askProjectStatus">No cities yet. Pick a model, add a city, upload files, and run analysis.</p>
+                    <p class="muted ask-project-hint" id="askProjectStatus">No cities yet. Add a city to the project, upload files, then run analysis.</p>
                   </div>
                   <div class="ask-portfolio-stats" id="askPortfolioStats" hidden>
                     <span class="ask-stat-chip" id="askPortfolioCityCount">0 cities</span>
                     <span class="ask-stat-chip ask-stat-chip-ready" id="askPortfolioReadyCount" hidden>0 ready</span>
                   </div>
                 </header>
-
                 <label class="field ask-project-name-field">
                   <span class="field-label">Project name</span>
                   <input type="text" class="ask-project-input" id="askProjectName" placeholder="e.g. Summer 2024 Texas Heat Study" />
                 </label>
-
                 <div class="ask-portfolio-empty" id="askPortfolioEmpty">
                   <div class="ask-portfolio-empty-icon" aria-hidden="true">📍</div>
                   <p class="ask-portfolio-empty-title">No cities in this project yet</p>
-                  <p class="ask-portfolio-empty-text">Add a city address, upload files, then run analysis. Repeat for each city or time period you want to compare.</p>
+                  <p class="ask-portfolio-empty-text">Add a city to the project first, upload files, then run analysis. Repeat for each city or time period you want to compare.</p>
                 </div>
-
                 <ul class="ask-project-city-list" id="askProjectCityList" hidden></ul>
-
                 <div class="ask-project-actions">
                   <button type="button" class="run-btn run-btn-secondary" id="askNewProject">Start new project</button>
                 </div>
-
               </article>
-
             </div>
-
           </section>
 
-
-
           <section id="page-gfframe" class="page page-gfframe">
-
             <div class="gf-app">
-
               <header class="gf-topbar">
-
                 <div class="gf-topbar-icon" aria-hidden="true">🌡</div>
-
                 <div>
-
                   <div class="gf-topbar-title" id="gfTopbarTitle">Urban Heat &amp; Equity GUI Frame</div>
-
-                  <div class="gf-topbar-subtitle muted" id="gfTopbarSubtitle">LST + Population + Census Analysis Platform</div>
-
+                  <div class="gf-topbar-subtitle muted" id="gfTopbarSubtitle">Geospatial analysis + Census platform</div>
                 </div>
-
                 <span class="gf-badge" id="gfCityCountBadge">11 cities</span>
-
                 <span class="gf-badge gf-badge-demo" id="gfDemoBadge" hidden>DEMO</span>
-
                 <span class="gf-badge gf-badge-project" id="gfProjectBadge" hidden>Your project</span>
-
                 <button type="button" class="gf-export-btn" data-goto="ask">Back to Ask</button>
-
                 <button type="button" class="gf-export-btn" id="gfExportBtn">Export PDF report</button>
-
               </header>
 
-
-
               <div class="gf-main">
-
                 <aside class="gf-sidebar">
-
                   <div class="gf-sidebar-section">
-
                     <div class="gf-sidebar-label" id="gfCityListLabel">Your cities</div>
-
                     <div id="gfCityList"></div>
-
                   </div>
-
                   <div class="gf-sidebar-section" id="gfKeyQueries">
-
                     <div class="gf-sidebar-label">Key queries</div>
-
                   </div>
-
                   <div class="gf-sidebar-section gf-sidebar-section-last">
-
                     <div class="gf-sidebar-label">Map layers</div>
-
-                    <div class="gf-layer-toggle" data-gf-layer="lst" id="gfLayerAnalysis"><span id="gfLayerAnalysisLabel">LST heatmap</span><div class="gf-toggle on" role="switch" aria-checked="true"></div></div>
-
+                    <div class="gf-layer-toggle" data-gf-layer="analysis" id="gfLayerAnalysis"><span id="gfLayerAnalysisLabel">Analysis heatmap</span><div class="gf-toggle on" role="switch" aria-checked="true"></div></div>
                     <div class="gf-layer-toggle" data-gf-layer="tracts"><span>Census tracts</span><div class="gf-toggle on" role="switch" aria-checked="true"></div></div>
-
                     <div class="gf-layer-toggle" data-gf-layer="density"><span>Population density</span><div class="gf-toggle" role="switch" aria-checked="false"></div></div>
-
                     <div class="gf-layer-toggle" data-gf-layer="income"><span>Income overlay</span><div class="gf-toggle" role="switch" aria-checked="false"></div></div>
-
                     <div class="gf-layer-toggle" data-gf-layer="ethnicity"><span>Ethnicity overlay</span><div class="gf-toggle" role="switch" aria-checked="false"></div></div>
-
                   </div>
-
                 </aside>
 
-
-
                 <div class="gf-center">
-
                   <div class="gf-map-area" id="gfMapArea">
-
                     <div class="gf-map-warning" id="gfMapWarning" hidden role="alert"></div>
-
                     <div class="gf-map-viewport" id="gfMapViewport">
-
                       <div id="gfMapLibre" class="gf-map-libre hidden" aria-label="Interactive census tract map"></div>
-
                       <p class="gf-map-empty" id="gfMapEmpty">Select a city to load census &amp; population map layers…</p>
-
                     </div>
-
                     <p class="gf-map-loading" id="gfMapLoading" hidden>Loading city data…</p>
-
                     <div class="gf-map-overlay-label" id="gfMapOverlay"></div>
-
                     <div class="gf-legend">
-
                       <div class="gf-legend-bar">
-
                         <div class="gf-legend-cell" style="background:#3d7ea6"></div>
-
                         <div class="gf-legend-cell" style="background:#74add1"></div>
-
                         <div class="gf-legend-cell" style="background:#abd9e9"></div>
-
                         <div class="gf-legend-cell" style="background:#f3c89b"></div>
-
                         <div class="gf-legend-cell" style="background:#e07b32"></div>
-
                         <div class="gf-legend-cell" style="background:#c45a1a"></div>
-
                         <div class="gf-legend-cell" style="background:#9b2226"></div>
-
                       </div>
-
-                      <div class="gf-legend-labels" id="gfLegendLabels"><span id="gfLegendLow">Low</span><span id="gfLegendTitle">LST</span><span id="gfLegendHigh">High</span></div>
-
+                      <div class="gf-legend-labels" id="gfLegendLabels"><span id="gfLegendLow">Low</span><span id="gfLegendTitle">Analysis</span><span id="gfLegendHigh">High</span></div>
                       <div class="gf-legend-scale" id="gfLstScaleWrap" hidden>
                         <button type="button" class="gf-scale-btn is-active" data-gf-lst-scale="local">Local contrast</button>
                         <button type="button" class="gf-scale-btn" data-gf-lst-scale="fixed">Fixed °C</button>
                       </div>
-
                     </div>
-
                     <div class="gf-map-controls">
-
                       <button type="button" class="gf-map-ctrl-btn" id="gfZoomIn" title="Zoom in">+</button>
-
                       <button type="button" class="gf-map-ctrl-btn" id="gfZoomOut" title="Zoom out">−</button>
-
                       <button type="button" class="gf-map-ctrl-btn" id="gfZoomReset" title="Fit to view">Fit</button>
-
                       <button type="button" class="gf-map-ctrl-btn" id="gfAllCitiesBtn" title="All cities">◎</button>
-
                     </div>
-
                   </div>
-
-
 
                   <div class="gf-stats-row">
-
                     <div class="gf-stat-card">
-
                       <div class="gf-stat-label">County</div>
-
                       <div class="gf-stat-val gf-stat-sm" id="gfStatCounty">—</div>
-
                     </div>
-
                     <div class="gf-stat-card">
-
                       <div class="gf-stat-label">Census tracts</div>
-
                       <div class="gf-stat-val" id="gfStatTracts">—</div>
-
                     </div>
-
                     <div class="gf-stat-card">
-
                       <div class="gf-stat-label">Population</div>
-
                       <div class="gf-stat-val gf-stat-sm" id="gfStatPopulation">—</div>
-
                     </div>
-
                     <div class="gf-stat-card">
-
                       <div class="gf-stat-label">Median income</div>
-
                       <div class="gf-stat-val gf-stat-sm" id="gfStatIncome">—</div>
-
                     </div>
-
                     <div class="gf-stat-card">
-
                       <div class="gf-stat-label">Avg. density</div>
-
                       <div class="gf-stat-val gf-stat-sm" id="gfStatDensity">—</div>
-
                     </div>
-
                   </div>
-
                 </div>
-
-
 
                 <aside class="gf-right-panel" id="gfRightPanel">
                   <div
@@ -391,68 +248,39 @@
                     aria-label="Drag to resize query panel"
                     title="Drag to resize"
                   ></div>
-
                   <div class="gf-panel-tab-row">
-
                     <button type="button" class="gf-panel-tab active" id="gfTabChat" data-gf-tab="chat">Query</button>
-
                     <button type="button" class="gf-panel-tab" id="gfTabCharts" data-gf-tab="charts">Charts</button>
-
                     <button type="button" class="gf-panel-tab" id="gfTabLayers" data-gf-tab="layers">All cities</button>
-
                   </div>
-
                   <div class="gf-panel-content" id="gfPanelChat"></div>
-
                   <div class="gf-panel-content" id="gfPanelCharts" hidden>
-
-                    <div class="gf-panel-heading">Peak LST by city (°C)</div>
-
+                    <div class="gf-panel-heading">Primary metric by city</div>
                     <div class="gf-chart-bar-wrap" id="gfBarChart"></div>
-
                   </div>
-
                   <div class="gf-panel-content" id="gfPanelLayers" hidden>
-
                     <div class="gf-panel-heading">All 11 cities — click to focus</div>
-
                     <div class="gf-city-grid" id="gfCityGrid"></div>
-
                   </div>
-
                   <div class="gf-query-input-wrap">
-
-                    <label class="sr-only" for="gfQueryInput">Ask about LST or equity</label>
-
+                    <label class="sr-only" for="gfQueryInput">Ask about the dashboard</label>
                     <textarea class="gf-query-input" id="gfQueryInput" rows="2" placeholder="Ask a question about any city, month, population group…"></textarea>
-
-                    <button type="button" class="gf-send-btn" id="gfSendBtn">Ask LLM</button>
-
+                    <button type="button" class="gf-send-btn" id="gfSendBtn">➤</button>
                   </div>
-
                 </aside>
-
               </div>
-
             </div>
-
           </section>
-
         </main>
-
       </div>
-
     </div>
 
-    <script src="dashboard_adapter.js?v=3"></script>
-
-    <script src="app.js?v=26"></script>
-
-    <script src="vendor/maplibre-gl/maplibre-gl.js"></script>
-
-    <script src="gf_frame.js?v=22"></script>
-
+    <script type="module" src="dashboard_adapter.js?v=6"></script>
+    <script src="gf_frame_shared.js?v=6" defer></script>
+    <script src="gf_frame_map.js?v=6" defer></script>
+    <script src="gf_frame_chat.js?v=6" defer></script>
+    <script src="app.js?v=33" defer></script>
+    <script src="vendor/maplibre-gl/maplibre-gl.js" defer></script>
+    <script src="gf_frame.js?v=6" defer></script>
   </body>
-
 </html>
-

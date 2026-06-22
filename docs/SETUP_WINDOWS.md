@@ -326,11 +326,14 @@ Restart the website (`python serve.py`) after installing Ollama, then try chat o
 
 **Typical workflow on Ask:**
 
-1. Select **Land Surface Temperature** in the model dropdown.
+1. Select an analysis model (e.g. **Land Surface Temperature** or **OBIA Land Cover**).
 2. Enter a city like `Round Rock, TX`.
-3. Upload Landsat files that include bands `ST_B10`, `SR_B4`, and `SR_B5`.
-4. Click **Add city to project**, then **Run LST for city**.
-5. When processing finishes, you are taken to **Your project** with maps and charts.
+3. Upload the files required for that model (Landsat `ST_B10`, `SR_B4`, `SR_B5` for LST; multispectral GeoTIFF + training shapefile for OBIA).
+4. Click **Add city to project** (step 1).
+5. Click **Run … for city** when step 2 appears (label matches the model).
+6. When processing finishes, you are taken to **Your project** with maps and charts.
+
+After code updates: restart `python serve.py` and hard-refresh the browser (`Ctrl + Shift + R`).
 
 For a presenter-style walkthrough, see [DEMO.md](DEMO.md).
 
@@ -360,8 +363,9 @@ If you downloaded a **new ZIP** from GitHub to get updates, extract it to a new 
 | ------------------------------------------ | ------------------------------------------------------------------------------------------------- |
 | `python is not recognized`                 | Reinstall Python with **Add python.exe to PATH** checked; reboot; or use `py` instead of `python` |
 | `Missing serve.py` or wrong folder         | `cd` into the folder that contains `serve.py`, not a parent folder                                |
-| Port 8765 already in use                   | Another copy of the server may be running; close other PowerShell windows or restart the PC       |
-| Blank page or old layout                   | Hard-refresh the browser: `Ctrl + Shift + R`                                                      |
+| Port 8765 already in use                   | Another `python serve.py` may still be running — close other PowerShell windows or end the process in Task Manager |
+| `ImportError: city_run_stats` on startup   | Update to latest code and restart `python serve.py` |
+| Blank page or old layout                   | Hard-refresh the browser: `Ctrl + Shift + R` (cache-busted `app.js` / `index.html`) |
 | Demographics show `—`                      | Set `CENSUS_API_KEY` in `.env`, save, restart `python serve.py`                                   |
 | Could not geocode address                  | Use `City, ST` format, e.g. `Austin, TX`                                                          |
 | Chat says Ollama unavailable               | Install/start Ollama and run `ollama pull llama3.2`; restart `serve.py`                           |

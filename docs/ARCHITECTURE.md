@@ -6,9 +6,9 @@ Geospatial GUI is a **terminal-launched** web application: one Python process se
 
 | Tab | Frontend | Backend | Purpose |
 |-----|----------|---------|---------|
-| **Ask** | `web/app.js`, `web/dashboard_adapter.js` | `GET /api/models`, `POST /api/projects/*` | Pick model, enter city, upload files, run analysis |
-| **Demo** | `web/gf_frame.js` | `GET /api/city-layers/demo-portfolio` | 11-city preview with placeholder LST |
-| **Your project** | `web/gf_frame.js`, `web/dashboard_adapter.js` | `GET /api/projects/{id}`, `POST /api/followup` | Adapter-driven dashboard (unlocked after ≥1 city ready) |
+| **Ask** | `web/app.js`, `web/dashboard_adapter.js`, `web/plugins/*` | `GET /api/models`, `POST /api/projects/*` | Pick model, add city, upload files, run analysis |
+| **Demo** | `web/gf_frame.js`, `web/gf_frame_*.js` | `GET /api/city-layers/demo-portfolio` | 11-city preview with placeholder LST |
+| **Your project** | `web/gf_frame.js`, `web/gf_frame_*.js`, `web/dashboard_adapter.js` | `GET /api/projects/{id}`, `POST /api/followup` | Adapter-driven dashboard (unlocked after ≥1 city ready) |
 
 ## Backend layout
 
@@ -44,11 +44,11 @@ backend/
 
 ### Model registry (`models/contract.py`, `models/registry.py`, `models/lst_model.py`, `models/obia_model.py`)
 
-Plugin contract and registration. Each model defines inputs, `run`, optional `post_process`, dashboard type, and vector fields. See [MODELS.md](MODELS.md).
+Plugin contract and registration. Each model defines inputs, `run`, optional `post_process`, dashboard type, and vector fields. See [ADDING_A_MODEL.md](ADDING_A_MODEL.md) and [MODELS.md](MODELS.md).
 
 Registered today: `lst` (Land Surface Temperature), `obia` (OBIA land cover).
 
-Dispatched by `backend/projects/dispatch.py` → `backend/projects/service.py` (`run_city_model_upload`). Model runs execute in a **background task**; the Ask tab polls `GET /api/projects/{id}` and shows a progress bar until the city status is `ready` or `error`.
+Dispatched by `backend/projects/dispatch.py` → `backend/projects/service.py` (`run_city_model_upload`). Model runs execute in a **background task**; the Ask tab polls `GET /api/projects/{id}` and shows a **model-aware** progress bar (LST vs OBIA step labels) until the city status is `ready` or `error`.
 
 ### Presets (`backend/core/presets.py`)
 
@@ -73,8 +73,6 @@ Multi-city project workflow:
 3. `POST /api/projects/{id}/cities/{key}/run?model=lst|obia` — upload files, background model run, tract enrichment when applicable
 4. `GET /api/projects/{id}` — portfolio manifest with per-city `run_stats`, `model_id`, tract vector URLs
 
-Legacy: `POST .../lst` aliases `.../run?model=lst`.
-
 ### Cross-city comparison (`backend/projects/compare.py`)
 
 Detects city names and metrics in follow-up questions; reads `run_stats` (with `lst_stats` fallback). Returns structured `city_comparison` on `POST /api/followup`.
@@ -87,7 +85,6 @@ Orchestrates the Heat & Equity data flow:
 2. `layers/tracts.py` — tract polygons (cached Census shapefile; TIGERweb fallback)
 3. `layers/census.py` — ACS 5-year tract demographics
 4. `layers/map_render.py` — optional server-side choropleth PNGs
-5. `layers/worldpop.py` — WorldPop 2020 USA raster clip + preview
 
 ### AI integration
 
@@ -102,17 +99,30 @@ Orchestrates the Heat & Equity data flow:
 
 ### Dashboard adapter (`web/dashboard_adapter.js`)
 
-- Fetches `GET /api/models`
-- Merges API metadata with `PRESENTATION` overrides (labels, choropleth field, units)
-- Shared by Ask and Heat & Equity project mode
+- ES module: fetches `GET /api/models`, merges API metadata with per-model plugins
+- Plugins: `web/plugins/lst_plugin.js`, `web/plugins/obia_plugin.js` (contract in `web/model_plugin.js`)
+- Shared by Ask and Heat & Equity project mode (choropleth, legend, metrics, chat hints)
 
 ### Ask workflow (`web/app.js`)
 
-Model dropdown, dynamic upload hints, project portfolio, async run with progress bar, `POST .../run?model={id}`, polling until city is `ready`.
+1. Select analysis model and enter city + optional month/year
+2. **Add city to project** (registers address in the active portfolio; model locks after first city)
+3. Upload input files
+4. **Run analysis** (step 2 button appears after step 1; label uses model `runVerb`, e.g. “Run LST for city”)
+5. Progress bar polls manifest status with per-model steps; redirects to **Your project** when ready
 
-### Heat & Equity frame (`web/gf_frame.js`)
+Project is auto-created on first use (`POST /api/projects`); portfolio stored under `data/projects/{id}/`.
 
-MapLibre maps, charts, layer toggles, chat. Project mode uses adapter for primary metric, legend, and `analysis_model` in chat context. Models with `dashboard: "raster"` show a placeholder shell until a dedicated view exists.
+### Heat & Equity frame (`web/gf_frame.js` + `web/gf_frame_*.js`)
+
+| File | Role |
+|------|------|
+| `gf_frame.js` | Shell bootstrap, city list, page activation |
+| `gf_frame_shared.js` | Shared state, top bar, adapter wiring, project load |
+| `gf_frame_map.js` | MapLibre map, layers, legend, tract popups |
+| `gf_frame_chat.js` | Query panel, follow-up chat, PDF export trigger |
+
+Project mode uses adapter/plugins for primary metric, choropleth field, legend, and `analysis_model` in chat context.
 
 ## Request flows
 
@@ -137,12 +147,14 @@ POST /api/city-layers {"address": "Round Rock, TX"}
 
 ```
 GET /api/models
-POST /api/projects { "model_id": "lst" }
+POST /api/projects { "model_id": "lst" }          # auto-created from Ask if needed
 POST /api/projects/{id}/cities {"address": "Round Rock, TX"}
+  → user uploads files on Ask
 POST /api/projects/{id}/cities/{key}/run?model=lst (multipart files)
-  → run_model (registry)
+  → background task: run_model (registry)
   → LST post_process: load_city_layers + enrich_tracts_with_lst
   → manifest updated (model_id, run_stats, lst_stats alias)
+GET /api/projects/{id}                            # polled by Ask progress bar
 ```
 
 ### Follow-up chat
@@ -159,7 +171,8 @@ POST /api/followup { question, context }
 
 ## Related docs
 
-- [MODELS.md](MODELS.md) — adding lab models
+- [ADDING_A_MODEL.md](ADDING_A_MODEL.md) — end-to-end guide for new models
+- [MODELS.md](MODELS.md) — registered models (LST, OBIA)
 - [API.md](API.md) — endpoint reference
 - [DATA.md](DATA.md) — folders, caches, external sources
 - [DEMO.md](DEMO.md) — stakeholder walkthrough

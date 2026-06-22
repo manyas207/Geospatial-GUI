@@ -1,0 +1,26 @@
+{
+  "city": "Dallas, TX",
+  "center_wgs84": {
+    "lat": 32.7767,
+    "lon": -96.797
+  },
+  "crs": "EPSG:32614",
+  "bounds_wgs84": [
+    -96.84925830762386,
+    32.734321723764,
+    -96.74469219569546,
+    32.81905405643152
+  ],
+  "raster": "obia_multispectral.tif",
+  "training_shapefile": "training_rois.shp",
+  "macroclasses": {
+    "urban": 1,
+    "vegetation": 2,
+    "water": 3,
+    "bare_soil": 4
+  },
+  "width": 320,
+  "height": 320,
+  "pixel_size_m": 30.0,
+  "seed": 42
+}

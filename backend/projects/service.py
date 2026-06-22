@@ -23,8 +23,8 @@ import geopandas as gpd
 DEFAULT_MODEL_ID = "lst"
 
 
-def _city_run_stats(city: dict) -> dict:
-    """Read per-city stats with backward compatibility for lst_stats."""
+def city_run_stats(city: dict) -> dict:
+    """Per-city pipeline stats (reads legacy lst_stats from old manifests)."""
     return dict(city.get("run_stats") or city.get("lst_stats") or {})
 
 
@@ -140,7 +140,7 @@ def _enrich_project_response(manifest: dict, projects_dir: Path) -> dict:
 
     for key, entry in (manifest.get("cities") or {}).items():
         city = dict(entry)
-        run_stats = _city_run_stats(city)
+        run_stats = city_run_stats(city)
         if run_stats and not city.get("run_stats"):
             city["run_stats"] = run_stats
         if run_stats and not city.get("lst_stats"):

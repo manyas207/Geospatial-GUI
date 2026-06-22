@@ -78,7 +78,6 @@ class CityLayersResponse(BaseModel):
     summary: dict = Field(default_factory=dict)
     map_layers: dict = Field(default_factory=dict)
     vector_layer: dict = Field(default_factory=dict)
-    worldpop: dict = Field(default_factory=dict)
     sources: dict = Field(default_factory=dict)
 
 

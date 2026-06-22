@@ -16,8 +16,8 @@ from fpdf.enums import XPos, YPos
 from backend.core.constants import TRACT_LAYER
 from backend.layers.orchestrator import VECTOR_QUERY_FIELDS
 from backend.layers.map_render import render_tract_map
-from backend.projects.service import get_city_gpkg_path, get_project
-from models.registry import get_model
+from backend.projects.service import city_run_stats, get_city_gpkg_path, get_project
+from models.registry import get_model, resolve_model_id
 
 MONTH_NAMES = (
     "",
@@ -184,7 +184,7 @@ def build_project_report_pdf(
 ) -> tuple[bytes, str]:
     """Build a PDF report in memory. Map PNGs are rendered on demand (not cached)."""
     project = get_project(project_id, projects_dir=projects_dir)
-    model_id = project.get("model_id") or "lst"
+    model_id = resolve_model_id(project.get("model_id"))
     spec = get_model(model_id)
     cities = _ready_cities(project, city_key)
     chat_pairs = chat_pairs or []
@@ -225,7 +225,7 @@ def build_project_report_pdf(
             _reset_x(pdf)
 
             summary = city.get("summary") or {}
-            run_stats = city.get("run_stats") or city.get("lst_stats") or {}
+            run_stats = city_run_stats(city)
 
             _pdf_line(pdf, "Census & demographics", bold=True, size=11)
             _pdf_bullet(pdf, "County", str(summary.get("county") or "-"))

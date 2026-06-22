@@ -7,7 +7,7 @@ from backend.chat.equity_burden import format_equity_burden_answer, is_equity_bu
 from backend.core.json_util import to_json_safe
 from backend.chat.ollama import chat
 
-SYSTEM_PROMPT = (
+LST_SYSTEM_PROMPT = (
     "You are a geospatial analysis assistant for an urban heat and equity dashboard. "
     "Answer using ONLY the dashboard context JSON provided.\n\n"
     "Heat-equity burden means HIGH land surface temperature (LST) combined with "
@@ -24,6 +24,29 @@ SYSTEM_PROMPT = (
     "language. Be concise. If data is missing, say what is missing."
 )
 
+OBIA_SYSTEM_PROMPT = (
+    "You are a geospatial analysis assistant for an OBIA land-cover dashboard. "
+    "Answer using ONLY the dashboard context JSON provided.\n\n"
+    "This project uses object-based image analysis (OBIA) for land-cover classification. "
+    "Do NOT describe results as land surface temperature, LST, heat, or thermal imagery.\n\n"
+    "Key tract fields: obia_mode_class (1=urban, 2=vegetation, 3=water, 4=bare soil), "
+    "obia_mode_pct (share of tract area in the dominant class), obia_segment_count.\n\n"
+    "Key run_stats fields: labeled_segments, total_segments, class_counts, "
+    "tract_mean_mode_pct. The city badge value is labeled segment count, not a "
+    "temperature or land-cover class id.\n\n"
+    "When city_comparison is present, only discuss cities listed there. "
+    "When project_cities is present, do not invent cities outside that list.\n\n"
+    "Do not tell the user to inspect JSON fields or blocks. Answer directly in plain "
+    "language. Be concise. If data is missing, say what is missing."
+)
+
+
+def _system_prompt(context: dict) -> str:
+    model = (context.get("analysis_model") or "").strip().lower()
+    if model == "obia":
+        return OBIA_SYSTEM_PROMPT
+    return LST_SYSTEM_PROMPT
+
 
 def _use_llm_for_equity() -> bool:
     return os.environ.get("EQUITY_CHAT_USE_LLM", "false").strip().lower() in (
@@ -39,7 +62,11 @@ def _fallback_answer(question: str, context: dict) -> str:
     if equity_answer:
         return equity_answer
 
-    parts = ["Based on the equity dashboard:"]
+    model = (context.get("analysis_model") or "").strip().lower()
+    dashboard_label = (
+        "OBIA land-cover dashboard" if model == "obia" else "equity dashboard"
+    )
+    parts = [f"Based on the {dashboard_label}:"]
     stats = context.get("stats") or {}
     if stats:
         for key, value in stats.items():
@@ -96,14 +123,18 @@ def answer_about_dashboard(question: str, context: dict) -> str:
     try:
         llm_answer = chat(
             [
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": _system_prompt(context)},
                 {
                     "role": "user",
                     "content": f"Dashboard context:\n{context_block}\n\nQuestion: {question}",
                 },
             ]
         ).strip()
-        if is_equity_burden_question(question) and equity:
+        if (
+            is_equity_burden_question(question)
+            and equity
+            and not _use_llm_for_equity()
+        ):
             equity_answer = format_equity_burden_answer(equity)
             if equity_answer:
                 return equity_answer

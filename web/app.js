@@ -32,7 +32,9 @@
   const askProjectFileHint = document.getElementById("askProjectFileHint");
   const askProjectFileTitle = document.getElementById("askProjectFileTitle");
   const askAddCityBtn = document.getElementById("askAddCity");
-  const askRunCityBtn = document.getElementById("askRunCityLst");
+  const askRunCityBtn = document.getElementById("askRunCity");
+  const askRunCitySection = document.getElementById("askRunCitySection");
+  const askRunCityHint = document.getElementById("askRunCityHint");
   const askRunProgress = document.getElementById("askRunProgress");
   const askRunProgressLabel = document.getElementById("askRunProgressLabel");
   const askRunProgressPct = document.getElementById("askRunProgressPct");
@@ -146,6 +148,20 @@
     return MODEL_RUN_STEPS[modelId] || MODEL_RUN_STEPS.default;
   }
 
+  function runProgressWorkingDetail(modelId) {
+    const pres = adapter?.getPresentation(modelId) || presentation();
+    if (pres.runProgressWorking) return pres.runProgressWorking;
+    const verb = pres.runVerb || "analysis";
+    return `Still working — ${verb} runs can take several minutes for large inputs.`;
+  }
+
+  function runProgressStartDetail(modelId) {
+    const pres = adapter?.getPresentation(modelId) || presentation();
+    if (pres.runProgressStart) return pres.runProgressStart;
+    const verb = pres.runVerb || "analysis";
+    return `Starting ${verb} analysis on the server…`;
+  }
+
   function showRunProgress(label, percent, detail) {
     if (!askRunProgress) return;
     askRunProgress.hidden = false;
@@ -167,7 +183,7 @@
         String(percent != null ? Math.round(percent) : 0)
       );
     }
-    if (askRunProgressDetail && detail) askRunProgressDetail.textContent = detail;
+    if (askRunProgressDetail && detail != null) askRunProgressDetail.textContent = detail;
   }
 
   function hideRunProgress() {
@@ -177,6 +193,7 @@
       askRunProgressBar.classList.remove("is-indeterminate");
       askRunProgressBar.style.width = "";
     }
+    if (askRunProgressDetail) askRunProgressDetail.textContent = "";
   }
 
   async function pollCityRun(cityKey, modelId) {
@@ -205,9 +222,7 @@
       showRunProgress(
         stepLabel,
         status === "processing" ? pseudoPct : status === "ready" ? 100 : pseudoPct,
-        status === "processing"
-          ? "Still working — large OBIA runs can take several minutes."
-          : ""
+        status === "processing" ? runProgressWorkingDetail(modelId) : ""
       );
       setStatus(`${stepLabel} (${city?.name || "city"})`, "");
 
@@ -221,6 +236,39 @@
     }
 
     throw new Error("Analysis timed out. Check server logs and try again.");
+  }
+
+  function syncAskFormActions() {
+    const address = resolveCityAddress();
+    const period = resolveCityPeriod();
+    const cityKey =
+      address && validateCityPeriodSilent(period)
+        ? cityKeyForEntry(address, period.month, period.year)
+        : null;
+    const cityInProject = Boolean(cityKey);
+    const pres = presentation();
+
+    if (askRunCitySection) askRunCitySection.hidden = !cityInProject;
+    if (askRunCityBtn) {
+      askRunCityBtn.disabled = !cityInProject || !projectCityFiles.length;
+    }
+    if (askRunCityHint) {
+      if (!cityInProject) {
+        askRunCityHint.textContent = "";
+      } else if (!projectCityFiles.length) {
+        askRunCityHint.textContent = `Upload input files above, then run ${pres.runVerb || "analysis"} for this city.`;
+      } else {
+        askRunCityHint.textContent = `Ready — click to run ${pres.runVerb || "analysis"} for this city.`;
+      }
+    }
+  }
+
+  function validateCityPeriodSilent(period) {
+    const { month, year } = period;
+    if (month != null && !year) return false;
+    if (month != null && (month < 1 || month > 12)) return false;
+    if (year != null && (year < 1984 || year > 2100)) return false;
+    return true;
   }
 
   function updateAskModelUI() {
@@ -240,6 +288,7 @@
     if (askProjectFilesInput) askProjectFilesInput.accept = accept;
     updateProjectFileUI();
     syncModelSelectLock();
+    syncAskFormActions();
   }
 
   function hasReadyProject() {
@@ -413,6 +462,7 @@
       askProjectFileList.innerHTML = "";
       askProjectFileClear?.classList.add("hidden");
       if (askProjectFileHint) askProjectFileHint.textContent = defaultHint;
+      syncAskFormActions();
       return;
     }
 
@@ -455,6 +505,7 @@
     if (askProjectFileHint) {
       askProjectFileHint.textContent = `${projectCityFiles.length} file${projectCityFiles.length === 1 ? "" : "s"} ready to upload`;
     }
+    syncAskFormActions();
   }
 
   function addProjectFiles(incoming) {
@@ -537,6 +588,7 @@
       }
       updatePortfolioChrome(0, 0);
       updateNavVisibility();
+      syncAskFormActions();
       return;
     }
 
@@ -601,12 +653,14 @@
     });
 
     updateNavVisibility();
+    syncAskFormActions();
   }
 
   async function loadAskProjectState() {
     if (!projectId) {
       projectData = null;
       renderAskPortfolio();
+      syncAskFormActions();
       return;
     }
     try {
@@ -621,11 +675,13 @@
       syncProjectNameInput();
       updateAskModelUI();
       renderAskPortfolio();
+      syncAskFormActions();
     } catch {
       projectId = null;
       localStorage.removeItem("gf_project_id");
       projectData = null;
       renderAskPortfolio();
+      syncAskFormActions();
     }
   }
 
@@ -684,6 +740,7 @@
       await saveProjectName();
       await registerAskCity(address, period);
       renderAskPortfolio();
+      syncAskFormActions();
       const pres = presentation();
       setStatus(
         `${address}${periodPhrase(period.month, period.year)} added. Upload files, then run ${pres.runVerb || "analysis"}.`,
@@ -711,28 +768,15 @@
 
     let cityKey = cityKeyForEntry(address, period.month, period.year);
     if (!cityKey) {
-      askRunCityBtn.disabled = true;
-      setStatus(`Registering ${address}${periodPhrase(period.month, period.year)}…`, "");
-      try {
-        await saveProjectName();
-        await registerAskCity(address, period);
-        cityKey = cityKeyForEntry(address, period.month, period.year);
-      } catch (error) {
-        setStatus(error.message || "Could not register city", "is-error");
-        askRunCityBtn.disabled = false;
-        return;
-      }
-    }
-
-    if (!cityKey) {
-      setStatus("Could not find this city and period in your project", "is-error");
+      setStatus("Add this city to the project first, then upload files and run analysis.", "is-error");
       return;
     }
 
     const pres = presentation();
+    const modelId = selectedModelId;
     askRunCityBtn.disabled = true;
     askAddCityBtn.disabled = true;
-    showRunProgress("Uploading files…", 5, "Starting analysis on the server…");
+    showRunProgress("Uploading files…", 5, runProgressStartDetail(modelId));
     setStatus(
       `Running ${pres.runVerb || selectedModel().label} for ${address}${periodPhrase(period.month, period.year)}…`,
       ""
@@ -751,9 +795,10 @@
 
       projectData = payload;
       renderAskPortfolio();
-      showRunProgress("Running analysis…", 12, "Server is processing your files.");
+      const steps = modelRunSteps(modelId);
+      showRunProgress(steps[1] || "Running analysis…", 12, runProgressWorkingDetail(modelId));
 
-      const finishedCity = await pollCityRun(cityKey, selectedModelId);
+      const finishedCity = await pollCityRun(cityKey, modelId);
       if (finishedCity?.status === "error") {
         throw new Error(finishedCity.error || "Model run failed.");
       }
@@ -782,6 +827,7 @@
       hideRunProgress();
       askRunCityBtn.disabled = false;
       askAddCityBtn.disabled = false;
+      syncAskFormActions();
     }
   }
 
@@ -919,6 +965,11 @@
   });
 
   askAddCityBtn?.addEventListener("click", () => addCityToProject());
+
+  askCityCustom?.addEventListener("input", syncAskFormActions);
+  askCityMonth?.addEventListener("change", syncAskFormActions);
+  askCityYear?.addEventListener("input", syncAskFormActions);
+
   askRunCityBtn?.addEventListener("click", () => runAskCityModel());
   askNewProjectBtn?.addEventListener("click", () => resetAskProject());
 

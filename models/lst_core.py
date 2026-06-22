@@ -344,8 +344,8 @@ def run_lst_pipeline(
         geotiff_path = out_dir / f"LST_{safe_label}.tif"
         write_lst_geotiff(lst_2d, grid_meta["profile"], geotiff_path)
 
-    ref_temps = [float(t) for t in cfg["ref_temps_C"]]
-    ref_mean = float(np.mean(ref_temps))
+    ref_temps = [float(t) for t in cfg.get("ref_temps_C") or []]
+    ref_mean = float(np.mean(ref_temps)) if ref_temps else float("nan")
 
     return PipelineResult(
         label=label,

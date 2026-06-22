@@ -466,9 +466,42 @@ body {
   margin-top: auto;
 }
 
+.ask-form-actions-step {
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.ask-form-actions-step + .ask-form-actions-step {
+  padding-top: 0;
+  border-top: none;
+}
+
+.ask-step-badge-inline {
+  flex: 0 0 auto;
+  margin-top: 10px;
+}
+
+.ask-form-actions-run-inner {
+  flex: 1 1 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ask-run-city-hint {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
 .ask-form-actions .run-btn {
   margin-top: 0;
   flex: 1 1 180px;
+}
+
+.ask-form-actions-run .run-btn {
+  flex: 1 1 auto;
+  width: 100%;
 }
 
 .ask-run-progress {
