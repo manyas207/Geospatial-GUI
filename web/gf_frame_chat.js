@@ -73,6 +73,35 @@
     return ctx;
   }
 
+  function defaultChatMessages() {
+    return [
+      {
+        role: "assistant",
+        text: "Welcome! Select a city, hover tracts for details, or click a tract to zoom in.",
+      },
+    ];
+  }
+
+  function resetChat(projectId) {
+    const { state, dom } = gf;
+    state.chatMessages = defaultChatMessages();
+    state.chatProjectId = projectId ?? null;
+    if (dom.queryInputEl) dom.queryInputEl.value = "";
+    renderChat();
+  }
+
+  function setChatLoading(loading) {
+    const { state, dom } = gf;
+    state.chatLoading = Boolean(loading);
+    if (dom.sendBtnEl) {
+      dom.sendBtnEl.disabled = state.chatLoading;
+      dom.sendBtnEl.setAttribute("aria-busy", state.chatLoading ? "true" : "false");
+      dom.sendBtnEl.textContent = state.chatLoading ? "…" : "➤";
+    }
+    if (dom.queryInputEl) dom.queryInputEl.disabled = state.chatLoading;
+    renderChat();
+  }
+
   function renderChat() {
     const { state, dom } = gf;
     if (!dom.chatPanelEl) return;
@@ -83,6 +112,13 @@
       bubble.textContent = msg.text;
       dom.chatPanelEl.appendChild(bubble);
     });
+    if (state.chatLoading) {
+      const pending = document.createElement("div");
+      pending.className = "gf-msg gf-msg-assistant gf-msg-loading";
+      pending.setAttribute("aria-live", "polite");
+      pending.textContent = "Thinking…";
+      dom.chatPanelEl.appendChild(pending);
+    }
     dom.chatPanelEl.scrollTop = dom.chatPanelEl.scrollHeight;
   }
 
@@ -101,6 +137,9 @@
         ? payload.detail
         : "Too many chat requests. Please wait before trying again.";
     }
+    if (response.status === 413) {
+      return typeof payload.detail === "string" ? payload.detail : "Upload is too large.";
+    }
     if (typeof payload.detail === "string") return payload.detail;
     if (Array.isArray(payload.detail) && payload.detail.length) {
       const first = payload.detail[0];
@@ -114,13 +153,20 @@
 
   async function askQuestion(question) {
     const { state, dom } = gf;
-    const q = (question || "").trim();
+    const check = window.AppLimits?.validateChatQuestion(question);
+    if (check && !check.ok) {
+      state.chatMessages.push({ role: "assistant", text: check.message });
+      renderChat();
+      switchPanelTab("chat");
+      return;
+    }
+    const q = check?.question || (question || "").trim();
     if (!q) return;
 
     state.chatMessages.push({ role: "user", text: q });
     renderChat();
     switchPanelTab("chat");
-    if (dom.sendBtnEl) dom.sendBtnEl.disabled = true;
+    setChatLoading(true);
 
     try {
       const response = await fetch("/api/followup", {
@@ -143,8 +189,7 @@
     } catch {
       state.chatMessages.push({ role: "assistant", text: "Network error. Check that the server is running." });
     } finally {
-      if (dom.sendBtnEl) dom.sendBtnEl.disabled = false;
-      renderChat();
+      setChatLoading(false);
     }
   }
 
@@ -247,6 +292,8 @@
 
   Object.assign(gf, {
     chatContext,
+    defaultChatMessages,
+    resetChat,
     renderChat,
     switchPanelTab,
     followupErrorText,

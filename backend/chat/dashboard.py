@@ -4,6 +4,7 @@ import json
 import os
 
 from backend.chat.equity_burden import format_equity_burden_answer, is_equity_burden_question
+from backend.chat.layer_correlation import format_correlation_answer, is_correlation_question
 from backend.core.json_util import to_json_safe
 from backend.chat.ollama import chat
 
@@ -18,6 +19,16 @@ LST_SYSTEM_PROMPT = (
     "summary as your primary evidence. Cite tract names, LST (°C), income ($), and "
     "burden_score. Contrast with highest_lst_tract when it differs from the top "
     "burdened tract.\n\n"
+    "When layer_correlations is present, write as an urban heat and equity analyst—not a "
+    "statistics report. Use narrative_lead and each pair's interpretation field as your "
+    "evidence, then explain what the patterns mean for residents and planning in this city.\n"
+    "- Write 2-4 short paragraphs in plain prose. Do NOT bullet-list every correlation.\n"
+    "- Mention at most two r values, woven into sentences; prefer everyday phrases like "
+    "'clear pattern' or 'modest tendency' over jargon.\n"
+    "- Do NOT use LaTeX or escaped math (no \\(°C\\), \\$, or similar). Write °C and $ normally.\n"
+    "- Skip pairs with |r| < 0.2 unless the user explicitly asks for a full table.\n"
+    "- Close with one brief sentence on equity or heat-risk implications, and that "
+    "correlation is not causation.\n\n"
     "When city_comparison is present, only discuss cities listed there. "
     "When project_cities is present, do not invent cities outside that list.\n\n"
     "Do not tell the user to inspect JSON fields or blocks. Answer directly in plain "
@@ -62,6 +73,10 @@ def _fallback_answer(question: str, context: dict) -> str:
     if equity_answer:
         return equity_answer
 
+    correlation_answer = format_correlation_answer(context.get("layer_correlations") or {})
+    if correlation_answer and is_correlation_question(question):
+        return correlation_answer
+
     model = (context.get("analysis_model") or "").strip().lower()
     dashboard_label = (
         "OBIA land-cover dashboard" if model == "obia" else "equity dashboard"
@@ -92,6 +107,7 @@ def _llm_context(context: dict) -> dict:
         "model": context.get("model"),
         "summary": context.get("summary"),
         "equity_burden": context.get("equity_burden"),
+        "layer_correlations": context.get("layer_correlations"),
         "tract_query": context.get("tract_query"),
         "city_comparison": context.get("city_comparison"),
         "project_id": context.get("project_id"),
@@ -102,7 +118,7 @@ def _llm_context(context: dict) -> dict:
         "logs": (context.get("logs") or "")[:4000],
         "raster": context.get("raster"),
     }
-    if not context.get("equity_burden"):
+    if not context.get("equity_burden") and not context.get("layer_correlations"):
         payload["stats"] = context.get("stats")
     return payload
 
@@ -119,15 +135,19 @@ def answer_about_dashboard(question: str, context: dict) -> str:
             return equity_answer
 
     context_block = json.dumps(to_json_safe(_llm_context(context)), indent=2)
+    user_content = f"Dashboard context:\n{context_block}\n\nQuestion: {question}"
+    if is_correlation_question(question) and context.get("layer_correlations"):
+        user_content += (
+            "\n\nWrite an interpretive answer in prose (no bullet lists of statistics). "
+            "Lead with what the patterns mean for this city; use the narrative_lead "
+            "and interpretation fields in layer_correlations."
+        )
 
     try:
         llm_answer = chat(
             [
                 {"role": "system", "content": _system_prompt(context)},
-                {
-                    "role": "user",
-                    "content": f"Dashboard context:\n{context_block}\n\nQuestion: {question}",
-                },
+                {"role": "user", "content": user_content},
             ]
         ).strip()
         if (

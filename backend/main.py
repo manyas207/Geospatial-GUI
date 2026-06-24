@@ -3,11 +3,12 @@
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from backend.api.routes import city_layers, followup, models, projects, reports
+from backend.api.routes import city_layers, config, followup, models, projects, reports
 from backend.config import WEB_DIR
 
 app = FastAPI(title="Geospatial Dashboard API")
 
+app.include_router(config.router)
 app.include_router(models.router)
 app.include_router(projects.router)
 app.include_router(reports.router)

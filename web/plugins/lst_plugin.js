@@ -11,12 +11,6 @@ const LST_COLOR_STOPS = [
   "#b10026",
 ];
 
-const LST_FIXED_SCALE = {
-  min: 25,
-  max: 45,
-  colors: ["#ffffb2", "#fed976", "#feb24c", "#fd8d3c", "#f03b20", "#e31a1c", "#bd0026", "#800026"],
-};
-
 function buildRangeInterpolate(valueExpr, range, colors) {
   const stops = colors.length;
   const expr = ["interpolate", ["linear"], valueExpr];
@@ -91,21 +85,13 @@ export default createPlugin({
   renderLegend({ field, scaleMode, tractLegendRange, pres, isAnalysisLayer, layerId, layerLabels }) {
     if (!isAnalysisLayer || field !== "lst_mean_C") return null;
     const titleBase = layerLabels?.[layerId] || pres.legendLabel || "LST";
-    if (scaleMode === "local" && tractLegendRange) {
+    if ((scaleMode === "local" || scaleMode === "project") && tractLegendRange) {
+      const scopeLabel = scaleMode === "project" ? "all cities" : "this city";
       return {
-        title: `${titleBase} (local range)`,
+        title: `${titleBase} (${scopeLabel})`,
         low: `${tractLegendRange.actualMin.toFixed(1)}°`,
         high: `${tractLegendRange.actualMax.toFixed(1)}°`,
         colorStops: LST_COLOR_STOPS,
-        showScaleControls: true,
-      };
-    }
-    if (scaleMode === "fixed") {
-      return {
-        title: `${titleBase} (fixed °C)`,
-        low: `${LST_FIXED_SCALE.min}°`,
-        high: `${LST_FIXED_SCALE.max}°`,
-        colorStops: LST_FIXED_SCALE.colors,
         showScaleControls: true,
       };
     }
@@ -121,7 +107,7 @@ export default createPlugin({
   choroplethFillPaint(field, valueRange, { scaleMode, isAnalysisLayer }) {
     if (!this.usesLocalValueScale(field) || !isAnalysisLayer) return null;
     const value = ["coalesce", ["to-number", ["get", field]], 0];
-    if (scaleMode === "local" && valueRange) {
+    if ((scaleMode === "local" || scaleMode === "project") && valueRange) {
       return {
         "fill-color": buildRangeInterpolate(value, valueRange, LST_COLOR_STOPS),
         "fill-opacity": 0.82,
@@ -130,8 +116,8 @@ export default createPlugin({
     return {
       "fill-color": buildRangeInterpolate(
         value,
-        { min: LST_FIXED_SCALE.min, max: LST_FIXED_SCALE.max },
-        LST_FIXED_SCALE.colors
+        valueRange || { min: 25, max: 45 },
+        LST_COLOR_STOPS
       ),
       "fill-opacity": 0.82,
     };

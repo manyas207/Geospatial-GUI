@@ -2,6 +2,37 @@
 
 All notable changes to this project are documented here.
 
+## 2026-06-24
+
+### Added
+
+- **`GET /api/config`** — exposes upload and chat limits to the web UI (`upload_max_file_bytes`, `upload_max_total_bytes`, `chat_max_question_length`, rate-limit settings). Served with `Cache-Control: no-store`.
+- **Centralized limits** — `backend/core/limits.py` reads env vars; shared by uploads, rate limiting, and the config route.
+- **`web/limits.js`** — fetches `/api/config`, formats byte sizes, validates Ask uploads and chat question length client-side before requests.
+- **Upload size enforcement** — per-file and per-request caps via `UPLOAD_MAX_FILE_MB` / `UPLOAD_MAX_TOTAL_MB` (defaults 500 MB / 2 GB); chunked reads return **413** with human-readable sizes (`backend/core/uploads.py`).
+- **Layer correlation chat** — `backend/chat/layer_correlation.py` computes tract-level Pearson correlations (LST, income, density, race shares); `POST /api/followup` enriches context for correlation-style questions; LLM and deterministic fallback answers in `backend/chat/dashboard.py`.
+- **LST “Across cities” scale** — multi-city project choropleth uses a shared min/max across ready LST cities (replaces the old fixed 25–45 °C legend mode); legend buttons renamed **This city** / **Across cities** (`web/gf_frame_map.js`, `web/plugins/lst_plugin.js`).
+- **Chat loading UX** — “Thinking…” indicator, disabled send/input while a follow-up is in flight; chat resets when switching projects (`web/gf_frame_chat.js`, `web/gf_frame_shared.js`).
+
+### Changed
+
+- **Ask file hints** — upload labels include max per-file and total sizes from `/api/config` (`web/app.js`).
+- **`backend/core/rate_limit.py`** — delegates limit values to `backend/core/limits.py`.
+- **`docs/ADDING_A_MODEL.md`** — expanded local dev setup, architecture diagrams, checklists, and integration guidance.
+- **`.env.example`** — documents `UPLOAD_MAX_FILE_MB` and `UPLOAD_MAX_TOTAL_MB`.
+- **Cache bust** — bumped `?v=` on `index.html` script tags (`limits.js`, `gf_frame_*`, `app.js`).
+
+### Fixed
+
+- **Upload errors** — `HTTPException` (e.g. 413 payload too large) is re-raised in `backend/api/routes/projects.py` instead of being turned into a generic 500.
+- **Demo warm-up** — portfolio cache warm runs only in **Demo** mode, not after loading **Your project** (`web/gf_frame.js`).
+
+### Removed
+
+- **`scripts/generate_obia_sample_data.py`** — local OBIA sample generator.
+- **`sample_data/obia_dallas_tx/manifest.json`** — sample manifest (output artifacts under `sample_data/` may remain locally).
+- **`.gitignore` sample-data rules** — generated OBIA sidecar ignores removed from repo policy.
+
 ## 2026-06-22
 
 ### Added

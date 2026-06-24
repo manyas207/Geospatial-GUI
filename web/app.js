@@ -440,10 +440,7 @@
   }
 
   function formatFileSize(bytes) {
-    if (!Number.isFinite(bytes) || bytes < 0) return "";
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    return window.AppLimits?.formatBytes(bytes) || "";
   }
 
   function isAcceptedFile(file) {
@@ -451,9 +448,18 @@
     return adapter?.extensionMatchesAccept(file.name, accept) ?? true;
   }
 
+  function uploadHintText(modelId) {
+    const base = adapter?.inputHint(modelId || selectedModelId) || "Upload required input files";
+    const limits = window.AppLimits?.get?.();
+    if (!limits) return base;
+    const perFile = window.AppLimits.formatBytes(limits.upload_max_file_bytes);
+    const total = window.AppLimits.formatBytes(limits.upload_max_total_bytes);
+    return `${base} (max ${perFile} per file, ${total} total).`;
+  }
+
   function updateProjectFileUI() {
     if (!askProjectFileList) return;
-    const defaultHint = adapter?.inputHint(selectedModelId) || "Upload required input files";
+    const defaultHint = uploadHintText(selectedModelId);
     const hasFiles = projectCityFiles.length > 0;
     askProjectFileDrop?.classList.toggle("has-file", hasFiles);
 
@@ -512,6 +518,11 @@
     const valid = incoming.filter(isAcceptedFile);
     if (!valid.length) {
       setStatus(`Include at least one accepted file (${adapter?.inputAccept(selectedModelId)})`, "is-error");
+      return;
+    }
+    const sizeCheck = window.AppLimits?.validateUploadFiles(valid, projectCityFiles);
+    if (sizeCheck && !sizeCheck.ok) {
+      setStatus(sizeCheck.message, "is-error");
       return;
     }
     const existing = new Set(projectCityFiles.map((f) => fileKey(f)));
@@ -765,6 +776,11 @@
       setStatus(`Add input files for ${selectedModel().label}`, "is-error");
       return;
     }
+    const sizeCheck = window.AppLimits?.validateUploadFiles([], projectCityFiles);
+    if (sizeCheck && !sizeCheck.ok) {
+      setStatus(sizeCheck.message, "is-error");
+      return;
+    }
 
     let cityKey = cityKeyForEntry(address, period.month, period.year);
     if (!cityKey) {
@@ -837,6 +853,7 @@
     projectCityFiles = [];
     localStorage.removeItem("gf_project_id");
     localStorage.removeItem("gf_mode");
+    window.GfFrame?.resetChat?.(null);
     if (askModelSelect) askModelSelect.disabled = false;
     if (askProjectName) askProjectName.value = "";
     if (askCityYear) askCityYear.value = "";
@@ -974,6 +991,8 @@
   askNewProjectBtn?.addEventListener("click", () => resetAskProject());
 
   initCityPeriodFields();
+  const limitsReady = window.AppLimits?.load?.() || Promise.resolve();
+  limitsReady.then(() => updateProjectFileUI());
   initModels().then(() =>
     loadAskProjectState().then(() => {
       const lastPage = localStorage.getItem("gf_last_page");

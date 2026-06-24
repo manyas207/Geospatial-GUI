@@ -44,8 +44,16 @@
         text: "Welcome! Select a city, hover tracts for details, or click a tract to zoom in.",
       },
     ],
+    chatProjectId: null,
+    chatLoading: false,
+    projectGeojsonCache: {},
+    projectLstRangeCache: null,
     tractLegendRange: null,
-    lstScaleMode: localStorage.getItem("gf_lst_scale_mode") === "fixed" ? "fixed" : "local",
+    lstScaleMode: (() => {
+      const stored = localStorage.getItem("gf_lst_scale_mode");
+      if (stored === "project" || stored === "fixed") return "project";
+      return "local";
+    })(),
     map: null,
     mapReady: false,
     popup: null,
@@ -349,6 +357,11 @@
     if (!response.ok) throw new Error("Could not load project.");
     state.projectData = await response.json();
     state.projectModelId = state.projectData.model_id || "lst";
+    if (state.projectId !== state.chatProjectId) {
+      gf.resetChat?.(state.projectId);
+    }
+    state.projectLstRangeCache = null;
+    state.projectGeojsonCache = {};
     await ensureAdapterModels();
     syncProjectCityList();
     applyDashboardShell(state.projectModelId);

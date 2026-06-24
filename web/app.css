@@ -2248,6 +2248,27 @@ body.gf-panel-resizing .gf-right-panel {
   border: 1px solid var(--line);
 }
 
+.gf-msg-loading {
+  color: var(--muted);
+  font-style: italic;
+  animation: gf-chat-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes gf-chat-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.gf-query-input:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
 .gf-chart-bar-wrap {
   display: flex;
   flex-direction: column;

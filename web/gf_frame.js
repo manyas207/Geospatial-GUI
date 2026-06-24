@@ -352,6 +352,8 @@
 
     gf.afterLayout(async () => {
       await gf.ensureAdapterModels();
+      await (window.AppLimits?.load?.() || Promise.resolve());
+      window.AppLimits?.applyChatInputLimits?.(gf.dom.queryInputEl);
 
       if (state.appMode === "demo") {
         try {
@@ -362,8 +364,6 @@
         }
       }
 
-      gf.refreshDemoCityUI();
-
       if (state.appMode === "project") {
         try {
           await gf.loadProject();
@@ -371,8 +371,11 @@
           window.AppShell?.showPage("ask");
           return;
         }
-        gf.refreshDemoCityUI();
-      } else {
+      }
+
+      gf.refreshDemoCityUI();
+
+      if (state.appMode === "demo") {
         gf.startDemoPortfolioWarm();
       }
 

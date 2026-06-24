@@ -21,6 +21,7 @@ A model spans **three layers** that must agree on the same `id` (e.g. `ndvi`):
 
 ## Table of contents
 
+0. [Local dev setup](#local-dev-setup)
 1. [Before you start](#before-you-start)
 2. [Architecture overview](#architecture-overview)
 3. [Quick checklist](#quick-checklist)
@@ -31,18 +32,86 @@ A model spans **three layers** that must agree on the same `id` (e.g. `ndvi`):
 8. [Part 5 — Chat, comparison, and PDF](#part-5--chat-comparison-and-pdf)
 9. [Part 6 — Manifest and API](#part-6--manifest-and-api)
 10. [Part 7 — Testing and debugging](#part-7--testing-and-debugging)
-11. [Part 8 — Worked example (NDVI)](#part-8--worked-example-ndvi)
+11. [Part 8 — Worked example (NDVI, end-to-end)](#part-8--worked-example-ndvi-end-to-end)
 12. [Part 9 — Design guidelines](#part-9--design-guidelines)
 13. [Part 10 — File map](#part-10--file-map)
 14. [Related docs](#related-docs)
 
 ---
 
-## Before you start
+## Local dev setup
+
+Do this **once** before adding a model. If any step fails, fix it before writing new code.
+
+### 1. Install dependencies
+
+From the project root (`Geospatial-GUI-1/`):
+
+```bash
+pip install -r requirements.txt
+```
+
+Requires **Python 3.10+** (64-bit recommended for geospatial wheels).
+
+### 2. Configure environment
+
+**Windows:**
+
+```bash
+copy .env.example .env
+```
+
+**macOS / Linux:**
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` and set at minimum:
+
+```env
+CENSUS_API_KEY=your_key_here
+```
+
+Free key: https://api.census.gov/data/key_signup.html
+
+The census key is required for tract boundaries and ACS demographics on the dashboard. Without it, `post_process` may fail when loading tracts.
+
+### 3. Start the server
+
+```bash
+python serve.py
+```
+
+You should see:
+
+```text
+Open: http://127.0.0.1:8765/
+```
+
+Open that URL in a browser. API docs: http://127.0.0.1:8765/docs
+
+**If port 8765 is already in use:** another `python serve.py` is still running. Close that terminal or end the process, then start again.
+
+### 4. Verify the stack (before you add code)
+
+| Check | How |
+|-------|-----|
+| Server healthy | http://127.0.0.1:8765/ loads the Ask page |
+| Models registered | http://127.0.0.1:8765/api/models returns `lst` and `obia` |
+| Census works | Demo tab → pick a city → tract map shows demographics (not all `—`) |
+| Registry import | `python -c "from models.registry import list_models; print([m.id for m in list_models()])"` |
+
+After you add a model, **restart `python serve.py`** (no auto-reload) and **hard-refresh** the browser (`Ctrl+Shift+R`), or bump `?v=` on changed JS files in `web/index.html`.
+
+**Windows users:** see [SETUP_WINDOWS.md](SETUP_WINDOWS.md) for a full walkthrough.
+
+---
+
 
 ### Prerequisites
 
-- Python 3.10+, dependencies from `requirements.txt`
+- Working local dev environment 
 - Familiarity with GeoPandas / Rasterio (tract zonal stats or vector overlay)
 - A **US city address** (`City, ST`) whose census tracts overlap your raster extent
 - `CENSUS_API_KEY` in `.env` (required for tract boundaries and ACS demographics on the dashboard)
@@ -287,6 +356,51 @@ To support new formats (e.g. `.nc`, `.zip`), extend `backend/core/constants.py` 
 - `gpd.overlay` tracts × segments
 - Area-weighted mode class per tract
 
+#### CRS handling (critical for raster zonal joins)
+
+Census tracts from the server are stored in **WGS84** (`EPSG:4326`). Your output raster may use a **projected** CRS (e.g. `EPSG:32614` UTM). If you mask tracts in the wrong CRS, pixels will not align and every tract gets `null` — the map looks empty with no obvious error.
+
+**Rule:** always reproject **tract polygons to the raster CRS** before `rasterio.mask.mask`, not the other way around.
+
+```python
+# backend/pipelines/ndvi_zonal.py (and lst_zonal.py)
+gdf = tract_gdf.copy()
+if gdf.crs is None:
+    gdf = gdf.set_crs("EPSG:4326")   # census cache default
+
+with rasterio.open(ndvi_tif) as src:
+    raster_crs = src.crs
+    gdf_proj = gdf.to_crs(raster_crs)  # ← required step
+    for geom in gdf_proj.geometry:
+        data, _ = mask(src, [geom], crop=True, nodata=np.nan)
+        # ...
+```
+
+**How to debug CRS/extent issues:**
+
+```python
+import rasterio
+import geopandas as gpd
+
+with rasterio.open("path/to/ndvi.tif") as src:
+    print("Raster CRS:", src.crs)
+    print("Raster bounds:", src.bounds)  # in raster CRS units (usually metres)
+
+tracts = gpd.read_file("data/city_layers_cache/geojson/CACHE_KEY.geojson")
+tracts_proj = tracts.to_crs(src.crs)
+print("Tract bounds (raster CRS):", tracts_proj.total_bounds)
+# Bounds should overlap. If they don't, register a different city or move the raster.
+```
+
+**Common mistakes:**
+
+| Mistake | Symptom |
+|---------|---------|
+| Mask in WGS84 while raster is UTM | All tract values `null` |
+| Raster covers Brazil, city is `Dallas, TX` | `tract_zonal_warning`, empty choropleth |
+| Raster missing CRS (no `.prj` / tags) | Wrong reprojection or failed mask |
+| Using scene-wide stats only, skipping zonal join | Map shows census layers but not your metric |
+
 **Warnings:** If no values overlap tracts, set in `stats_updates`:
 
 ```python
@@ -350,15 +464,44 @@ Document in `.env.example`, [DATA.md](DATA.md), and your [MODELS.md](MODELS.md) 
 
 ## Part 2 — Frontend plugin
 
-### 2.1 Create `web/plugins/your_plugin.js`
+### 2.1 Minimal working plugin
+
+This is enough for Ask labels, bar chart, map choropleth, and tract popups (using `createPlugin` defaults for legend/paint):
 
 ```javascript
+// web/plugins/ndvi_plugin.js
 import { createPlugin } from "../model_plugin.js";
 
 export default createPlugin({
   id: "ndvi",
-  presentation: { /* see table below */ },
-  // optional hooks: renderLegend, choroplethFillPaint, …
+  presentation: {
+    // --- Required for a usable dashboard ---
+    choroplethField: "ndvi_mean",
+    primaryMetricKeys: ["ndvi_mean", "tract_mean_ndvi"],
+    runVerb: "NDVI",
+
+    // --- Strongly recommended (Ask + map labels) ---
+    runProgressStart: "Starting NDVI analysis on the server…",
+    runProgressWorking: "Still working — NDVI can take a few minutes for large scenes.",
+    barChartLabelProject: "Mean NDVI",
+    barChartHeadingProject: "Mean NDVI by city",
+    analysisLayerLabel: "NDVI",
+    legendLabel: "NDVI",
+    metricUnit: "",
+
+    // --- Recommended for chat ---
+    chatContextSummary:
+      "NDVI vegetation index for {city}. Per-tract column: ndvi_mean. " +
+      "Combine with median_income_usd and population for equity questions. " +
+      "This is vegetation greenness, not land surface temperature.",
+
+    // --- Optional polish (defaults exist in dashboard_adapter.js) ---
+    cardTitle: "Run NDVI for a city",
+    portfolioHint: "Upload a multispectral GeoTIFF whose red and NIR bands match your pipeline.",
+    fileDropTitle: "Multispectral GeoTIFF",
+    tractDetailLabel: "Mean NDVI",
+    chatAnalysisLabel: "NDVI vegetation index",
+  },
 });
 ```
 
@@ -372,40 +515,61 @@ import ndviPlugin from "./plugins/ndvi_plugin.js";
 });
 ```
 
-**Cache bust:** bump `dashboard_adapter.js?v=N` in `web/index.html` after changes.
+Bump the cache-bust query in `web/index.html` so browsers fetch the new module:
 
-### 2.2 Presentation fields (complete reference)
+```html
+<script type="module" src="dashboard_adapter.js?v=7"></script>
+```
 
-Merged in `mergePresentation()`: API spec → plugin `presentation` → defaults.
+Changing `?v=6` → `?v=7` forces a fresh download (see [Cache busting](#cache-busting) below).
 
-| Key | Used by | LST example | OBIA example |
-|-----|---------|-------------|--------------|
-| `dashboard` | Shell layout | `equity` | `equity` |
-| `analysisLayerId` | Map layer id | `analysis` | `analysis` |
-| `choroplethField` | Tract fill color | `lst_mean_C` | `obia_mode_class` |
-| `primaryMetricKeys` | Bar chart value lookup | `mean_C`, `tract_mean_lst_C` | `labeled_segments`, `primary_value` |
-| `primaryMetric` | From API (fallback) | `mean_C` | `primary_value` |
-| `metricUnit` | Value formatting | `°C` | `""` |
-| `primaryMetricSuffix` | Short badge format | — | ` seg` |
-| `runVerb` | Ask run button | `LST` | `OBIA` |
-| `runProgressStart` | Progress bar (start) | "Starting LST…" | "Starting OBIA…" |
-| `runProgressWorking` | Progress bar (polling) | "Still working — LST…" | "Still working — OBIA…" |
-| `cardTitle` | Ask card heading | "Run analysis for a city" | "Run OBIA for a city" |
-| `portfolioHint` | Ask portfolio help | Landsat hint | Raster + shapefile hint |
-| `fileDropTitle` | Upload zone title | "Input files" | "Raster + training files" |
-| `barChartLabelProject` | Bar chart Y label | "Mean LST (°C)" | "Labeled segments" |
-| `barChartHeadingProject` | Bar chart title | "Mean LST by city (°C)" | "Labeled segments by city" |
-| `analysisLayerLabel` | Layer toggle | "Land surface temperature" | "OBIA land cover" |
-| `legendLabel` | Legend title | `LST` | "Land cover class" |
-| `dashboardTitle` | Page H1 | "Urban Heat & Equity…" | "OBIA Land Cover Dashboard" |
-| `dashboardSubtitle` | Page subtitle | "LST + Population + Census…" | "Land cover + Population + Census" |
-| `queryPlaceholder` | Chat textarea | "Ask about LST…" | "Ask about land cover…" |
-| `emptyProjectHint` | Empty state HTML | Back to Ask hint | Back to Ask hint |
-| `sourcesAnalysis` | Sources footnote | "LST raster + zonal join" | "OBIA segmentation + classification" |
-| `tractPopupMetricLabel` | Map popup label | "Land surface temperature" | "Dominant OBIA class" |
-| `tractDetailLabel` | Tract detail row | "LST mean" | "Dominant class" |
-| `chatAnalysisLabel` | Key query prompts | "land surface temperature (LST)" | "OBIA land-cover classification" |
-| `chatContextSummary` | Chat system context | LST field glossary | OBIA class ids 1–4 |
+#### Cache busting
+
+Browsers cache static JS files. After editing `dashboard_adapter.js` or a plugin, either:
+
+- Hard-refresh: `Ctrl+Shift+R`, or
+- Increment `?v=N` on the changed `<script>` tag in `index.html`
+
+### 2.2 Presentation fields — required vs optional
+
+Merged in `mergePresentation()`: API spec → plugin `presentation` → `DEFAULT_PRESENTATION` in `dashboard_adapter.js`.
+
+| Key | Required? | Used by | Notes |
+|-----|-----------|---------|-------|
+| `id` (on plugin root) | **Yes** | Registry lookup | Must match `ModelSpec.id` |
+| `choroplethField` | **Yes** | Map tract fill | Must match a column in `tracts.gpkg` |
+| `primaryMetricKeys` | **Yes*** | Bar chart, city badge | *Or rely on API `primary_metric` only |
+| `runVerb` | **Yes** | Ask run button | e.g. `"Run NDVI for city"` |
+| `runProgressStart` | Recommended | Ask progress bar | Generic fallback exists in `app.js` |
+| `runProgressWorking` | Recommended | Ask progress bar | Generic fallback exists |
+| `barChartLabelProject` | Recommended | Cross-city bar chart | Default: `"Primary metric"` |
+| `barChartHeadingProject` | Recommended | Bar chart title | |
+| `analysisLayerLabel` | Recommended | Layer toggle | Default: `"Analysis result"` |
+| `legendLabel` | Recommended | Legend title | Used in generic key queries |
+| `metricUnit` | Optional | Value formatting | e.g. `"°C"`; empty for unitless NDVI |
+| `chatContextSummary` | Recommended | Chat system context | `{city}` is replaced at runtime |
+| `chatAnalysisLabel` | Optional | Suggested query prompts | |
+| `cardTitle` | Optional | Ask card heading | |
+| `portfolioHint` | Optional | Ask portfolio text | |
+| `fileDropTitle` | Optional | Upload zone | API `input_schema.label` is fallback |
+| `dashboardTitle` | Optional | Dashboard H1 | LST/OBIA customize; default is generic |
+| `dashboardSubtitle` | Optional | Dashboard subtitle | |
+| `queryPlaceholder` | Optional | Chat textarea | |
+| `emptyProjectHint` | Optional | Empty project state | |
+| `sourcesAnalysis` | Optional | Sources footnote | |
+| `tractPopupMetricLabel` | Optional | Map popup | Default uses `legendLabel` |
+| `tractDetailLabel` | Optional | Tract sidebar | |
+| `primaryMetricSuffix` | Optional | Short badge | OBIA uses `" seg"` |
+| `classLabels` / `classColors` | Optional | Categorical maps only | OBIA |
+
+**Extended reference (LST / OBIA examples):**
+
+| Key | LST example | OBIA example |
+|-----|-------------|--------------|
+| `choroplethField` | `lst_mean_C` | `obia_mode_class` |
+| `primaryMetricKeys` | `mean_C`, `tract_mean_lst_C` | `labeled_segments`, `primary_value` |
+| `runVerb` | `LST` | `OBIA` |
+| `metricUnit` | `°C` | `""` |
 
 ### 2.3 Plugin hooks (`web/model_plugin.js`)
 
@@ -688,16 +852,17 @@ python -c "from models.registry import get_model; print(get_model('ndvi').label)
 
 ### 7.2 Pipeline unit test (offline)
 
-Run your core function against files in `sample_data/` before wiring the UI:
+Run your core function against a GeoTIFF on disk before wiring the UI (use any multispectral `.tif` whose bands match your pipeline):
 
 ```bash
 python -c "
-from pathlib import Path
 from models.ndvi_core import compute_ndvi
-out = compute_ndvi('sample_data/scene.tif', 'data/_ndvi_test_out')
+out = compute_ndvi('/path/to/your_scene.tif', 'data/_ndvi_test_out')
 print(out)
 "
 ```
+
+Outputs land under `data/_ndvi_test_out/` (gitignored via `data/`).
 
 ### 7.3 Full UI smoke test
 
@@ -734,25 +899,49 @@ Look for `cities.{key}.error` and `status: "error"`.
 | Stale UI after edit | Browser cache | Bump `?v=` on changed JS files |
 | Plugin changes ignored | Module cache | Bump `dashboard_adapter.js?v=` |
 
-### 7.6 Sample data generator (recommended)
+### 7.6 Test inputs
 
-Follow `scripts/generate_obia_sample_data.py`:
+The repo does **not** ship synthetic rasters or a data generator. Use your own files:
 
-- Geocode a `City, ST` to bounds
-- Generate synthetic raster + optional training vectors
-- Write to `sample_data/your_model_{city}/`
-- Document run command in [MODELS.md](MODELS.md)
+| Model | Typical inputs | City on Ask |
+|-------|----------------|-------------|
+| LST | Landsat `ST_B10`, `SR_B4`, `SR_B5` GeoTIFFs for one scene | US city overlapping the tiles |
+| OBIA | Multispectral GeoTIFF + training shapefile (`.shp`, `.shx`, `.dbf`; `.prj` recommended) | US city overlapping the raster |
+| NDVI (example) | Multispectral GeoTIFF with red + NIR in the band order your pipeline expects | Same city as raster extent |
+
+**Before uploading:**
+
+- Confirm the file extension is allowed (see [Allowed upload types](#13-allowed-upload-types))
+- Confirm the raster has a CRS (`gdalinfo your.tif` or the debug snippet in [CRS handling](#crs-handling-critical-for-raster-zonal-joins))
+- Register the **same** geographic area on Ask (`City, ST`) — mismatched city vs raster extent is the most common cause of empty tract maps
 
 ---
 
-## Part 8 — Worked example (NDVI)
+## Part 8 — Worked example (NDVI, end-to-end)
 
-Minimal skeleton for a continuous per-tract vegetation index.
+Copy-paste reference for a **complete** NDVI model. After applying all steps, restart the server and run the [smoke test](#88-run-the-ndvi-smoke-test) with your own multispectral GeoTIFF.
+
+**Files created (7 new + 4 edits):**
+
+| # | File | Action |
+|---|------|--------|
+| 1 | `models/ndvi_core.py` | Create |
+| 2 | `backend/pipelines/ndvi_zonal.py` | Create |
+| 3 | `models/ndvi_model.py` | Create |
+| 4 | `models/registry.py` | Edit — register `NDVI_MODEL` |
+| 5 | `web/plugins/ndvi_plugin.js` | Create |
+| 6 | `web/dashboard_adapter.js` | Edit — import plugin |
+| 7 | `web/index.html` | Edit — bump `dashboard_adapter.js?v=` |
+| 8 | `web/app.js` | Edit (optional) — `MODEL_RUN_STEPS.ndvi` |
+| 9 | `backend/chat/dashboard.py` | Edit (optional) — `NDVI_SYSTEM_PROMPT` |
+| 10 | `backend/projects/compare.py` | Edit (optional) — `METRIC_ALIASES` |
+
+---
 
 ### 8.1 `models/ndvi_core.py`
 
 ```python
-"""Compute NDVI GeoTIFF from red + NIR bands."""
+"""Compute NDVI GeoTIFF from red + NIR bands (HLS-style: band 3 = red, band 4 = NIR)."""
 
 from __future__ import annotations
 
@@ -765,58 +954,210 @@ import rasterio
 def compute_ndvi(raster_path: str, out_dir: str) -> dict:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+
     with rasterio.open(raster_path) as src:
         if src.count < 4:
-            raise ValueError("Expected at least 4 bands (red=3, nir=4) or document your band order.")
+            raise ValueError(
+                f"Expected at least 4 bands (red=3, nir=4); got {src.count}. "
+                "Document a different band order in your model hint if needed."
+            )
         red = src.read(3).astype("float64")
         nir = src.read(4).astype("float64")
         ndvi = (nir - red) / np.maximum(nir + red, 1e-6)
+
         profile = src.profile.copy()
-        profile.update(dtype="float32", count=1, nodata=-9999)
+        profile.update(dtype="float32", count=1, nodata=-9999.0)
         out_tif = out_dir / "ndvi.tif"
         with rasterio.open(out_tif, "w", **profile) as dst:
             dst.write(ndvi.astype("float32"), 1)
+
     valid = ndvi[np.isfinite(ndvi)]
-    mean_ndvi = round(float(valid.mean()), 3) if valid.size else None
+    scene_mean = round(float(valid.mean()), 3) if valid.size else None
     return {
-        "stats": {"ndvi_mean": mean_ndvi, "geotiff": str(out_tif)},
-        "logs": f"Wrote {out_tif}",
+        "stats": {"ndvi_scene_mean": scene_mean, "geotiff": str(out_tif)},
+        "logs": f"Wrote {out_tif} (CRS {src.crs})",
     }
 ```
 
+---
+
 ### 8.2 `backend/pipelines/ndvi_zonal.py`
 
-Mirror `lst_zonal.py` — replace `lst_mean_C` / `lst_max_C` with `ndvi_mean` (and optional `ndvi_max`).
-
-### 8.3 `models/ndvi_model.py` (wiring)
+Full file — mirrors `lst_zonal.py` with CRS reprojection and `ndvi_mean` / `ndvi_max` columns:
 
 ```python
-from backend.layers.orchestrator import VECTOR_QUERY_FIELDS, city_cache_key, load_city_layers
-from backend.pipelines.ndvi_zonal import enrich_tracts_with_ndvi
-# … imports …
+"""Join NDVI GeoTIFF values to census tract polygons (zonal mean/max)."""
 
-NDVI_VECTOR_FIELDS = (*VECTOR_QUERY_FIELDS, "ndvi_mean")
+from __future__ import annotations
+
+from pathlib import Path
+
+import geopandas as gpd
+import numpy as np
+import rasterio
+from rasterio.mask import mask
+
+from backend.core.constants import TRACT_LAYER
+
+
+def enrich_tracts_with_ndvi(
+    tract_gdf: gpd.GeoDataFrame,
+    ndvi_tif: Path,
+    *,
+    out_gpkg: Path,
+    out_geojson: Path | None = None,
+) -> gpd.GeoDataFrame:
+    """Add ndvi_mean and ndvi_max per tract; write GPKG (+ optional GeoJSON)."""
+    ndvi_tif = Path(ndvi_tif)
+    if not ndvi_tif.exists():
+        raise FileNotFoundError(f"NDVI raster not found: {ndvi_tif}")
+
+    gdf = tract_gdf.copy()
+    if gdf.crs is None:
+        gdf = gdf.set_crs("EPSG:4326")
+
+    means: list[float | None] = []
+    maxes: list[float | None] = []
+
+    with rasterio.open(ndvi_tif) as src:
+        gdf_proj = gdf.to_crs(src.crs)
+        for geom in gdf_proj.geometry:
+            if geom is None or geom.is_empty:
+                means.append(None)
+                maxes.append(None)
+                continue
+            try:
+                data, _ = mask(src, [geom], crop=True, nodata=np.nan)
+                band = data[0].astype("float64")
+                valid = band[np.isfinite(band)]
+                if valid.size == 0:
+                    means.append(None)
+                    maxes.append(None)
+                else:
+                    means.append(round(float(valid.mean()), 3))
+                    maxes.append(round(float(valid.max()), 3))
+            except (ValueError, rasterio.errors.RasterioError):
+                means.append(None)
+                maxes.append(None)
+
+    gdf["ndvi_mean"] = means
+    gdf["ndvi_max"] = maxes
+
+    out_gpkg.parent.mkdir(parents=True, exist_ok=True)
+    gdf.to_file(out_gpkg, driver="GPKG", layer=TRACT_LAYER)
+
+    if out_geojson is not None:
+        out_geojson.write_text(gdf.to_json(), encoding="utf-8")
+
+    return gdf
+```
+
+---
+
+### 8.3 `models/ndvi_model.py`
+
+Full wiring: file picking, `run`, tract loading, `post_process`, and `ModelSpec`.
+
+```python
+"""NDVI model plugin — multispectral raster → tract zonal NDVI."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import geopandas as gpd
+
+from backend.core.constants import RASTER_SUFFIXES, TRACT_LAYER
+from backend.layers.orchestrator import (
+    VECTOR_QUERY_FIELDS,
+    city_cache_key,
+    load_city_layers,
+)
+from backend.pipelines.ndvi_zonal import enrich_tracts_with_ndvi
+from models.contract import (
+    InputField,
+    ModelResult,
+    ModelSpec,
+    PostProcessResult,
+    RunContext,
+)
+from models.ndvi_core import compute_ndvi
+
+NDVI_VECTOR_FIELDS = (*VECTOR_QUERY_FIELDS, "ndvi_mean", "ndvi_max")
+
+
+def _pick_raster(paths: list[Path]) -> Path:
+    rasters = [p for p in paths if p.suffix.lower() in RASTER_SUFFIXES]
+    if not rasters:
+        raise ValueError("Upload at least one GeoTIFF for NDVI.")
+    return max(rasters, key=lambda p: p.stat().st_size)
+
+
+def _load_tract_gdf(address: str, city_layers_cache: Path) -> gpd.GeoDataFrame:
+    """Load census tracts from city-layers cache (same pattern as lst_model.py)."""
+    load_city_layers(address, cache_dir=city_layers_cache)
+    cache_key = city_cache_key(address)
+    geojson_path = city_layers_cache / "geojson" / f"{cache_key}.geojson"
+    base_gpkg = city_layers_cache / "gpkg" / f"{cache_key}.gpkg"
+
+    if geojson_path.exists():
+        return gpd.read_file(geojson_path)
+    if base_gpkg.exists():
+        return gpd.read_file(base_gpkg, layer=TRACT_LAYER)
+    raise FileNotFoundError(
+        "Census tract layer not found after city-layers load. "
+        "Check CENSUS_API_KEY in .env and that the address geocodes."
+    )
+
+
+def _run_ndvi(paths: list[Path], ctx: RunContext) -> ModelResult:
+    raster = _pick_raster(paths)
+    out_dir = ctx.city_dir / "ndvi_output"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    raw = compute_ndvi(str(raster), str(out_dir))
+    stats = dict(raw.get("stats") or {})
+    artifacts: dict[str, str] = {}
+    geotiff = stats.get("geotiff")
+    if geotiff:
+        artifacts["geotiff"] = str(geotiff)
+    return ModelResult(
+        stats=stats,
+        logs=raw.get("logs") or "",
+        artifacts=artifacts,
+        primary_raster=raster.name,
+    )
+
 
 def _post_process_ndvi(result: ModelResult, ctx: RunContext) -> PostProcessResult:
     geotiff = result.artifacts.get("geotiff") or result.stats.get("geotiff")
     if not geotiff:
         raise ValueError("NDVI pipeline did not produce a GeoTIFF.")
-    layers = load_city_layers(ctx.address, cache_dir=ctx.city_layers_cache)
-    cache_key = city_cache_key(ctx.address)
-    # … load tract gdf from cache (copy from lst_model._post_process_lst) …
+
+    address = ctx.address
+    layers = load_city_layers(address, cache_dir=ctx.city_layers_cache)
+    tract_gdf = _load_tract_gdf(address, ctx.city_layers_cache)
+
+    out_gpkg = ctx.city_dir / "tracts.gpkg"
+    out_geojson = ctx.city_dir / "tracts.geojson"
     enriched = enrich_tracts_with_ndvi(
         tract_gdf,
         Path(geotiff),
-        out_gpkg=ctx.city_dir / "tracts.gpkg",
-        out_geojson=ctx.city_dir / "tracts.geojson",
+        out_gpkg=out_gpkg,
+        out_geojson=out_geojson,
     )
+
     stats_updates = dict(result.stats)
-    col = enriched["ndvi_mean"].dropna()
-    if not col.empty:
-        stats_updates["tract_mean_ndvi"] = round(float(col.mean()), 3)
-        stats_updates["ndvi_mean"] = stats_updates["tract_mean_ndvi"]
+    tract_ndvi = enriched["ndvi_mean"].dropna()
+    if not tract_ndvi.empty:
+        tract_mean = round(float(tract_ndvi.mean()), 3)
+        stats_updates["tract_mean_ndvi"] = tract_mean
+        stats_updates["ndvi_mean"] = tract_mean
     else:
-        stats_updates["tract_zonal_warning"] = "No NDVI values overlap census tracts."
+        stats_updates["tract_zonal_warning"] = (
+            "No NDVI values overlap census tracts — raster extent may not match "
+            "the registered city (check city name and CRS)."
+        )
+
     west, south, east, north = enriched.total_bounds
     return PostProcessResult(
         enriched_gdf=enriched,
@@ -830,17 +1171,21 @@ def _post_process_ndvi(result: ModelResult, ctx: RunContext) -> PostProcessResul
         },
     )
 
+
 NDVI_MODEL = ModelSpec(
     id="ndvi",
     label="NDVI",
-    description="Normalized difference vegetation index per census tract.",
+    description=(
+        "Normalized difference vegetation index from a multispectral GeoTIFF, "
+        "joined as mean/max NDVI per census tract."
+    ),
     input_schema=(
         InputField(
             name="multispectral_raster",
             label="Multispectral GeoTIFF",
             required=True,
             accept=".tif,.tiff,.geotiff,.gtiff",
-            hint="Red and NIR bands (bands 3 and 4 in default layout)",
+            hint="Red + NIR bands (default: band 3 = red, band 4 = NIR, HLS/Landsat-style)",
         ),
     ),
     dashboard="equity",
@@ -853,13 +1198,117 @@ NDVI_MODEL = ModelSpec(
 )
 ```
 
-### 8.4 Frontend + chat additions
+---
 
-1. `web/plugins/ndvi_plugin.js` — copy LST plugin, change field names and color ramp (green scale)
-2. Register in `dashboard_adapter.js`
-3. `MODEL_RUN_STEPS.ndvi` in `app.js`
-4. `NDVI_SYSTEM_PROMPT` in `backend/chat/dashboard.py`
-5. `"ndvi_mean": ["ndvi", "vegetation", "greenness"]` in `compare.py` `METRIC_ALIASES`
+### 8.4 `models/registry.py`
+
+```python
+from models.ndvi_model import NDVI_MODEL
+
+_MODELS: dict[str, ModelSpec] = {
+    LST_MODEL.id: LST_MODEL,
+    OBIA_MODEL.id: OBIA_MODEL,
+    NDVI_MODEL.id: NDVI_MODEL,
+}
+```
+
+Verify:
+
+```bash
+python -c "from models.registry import get_model; print(get_model('ndvi').label)"
+python serve.py
+# curl http://127.0.0.1:8765/api/models  → should list "ndvi"
+```
+
+---
+
+### 8.5 `web/plugins/ndvi_plugin.js`
+
+Use the [minimal working plugin](#21-minimal-working-plugin) from Part 2. Optionally add a green `choroplethFillPaint` by copying the interpolate pattern from `lst_plugin.js` and changing color stops.
+
+---
+
+### 8.6 `web/dashboard_adapter.js` + `web/index.html`
+
+```javascript
+import ndviPlugin from "./plugins/ndvi_plugin.js";
+[lstPlugin, obiaPlugin, ndviPlugin].forEach((plugin) => { PLUGINS[plugin.id] = plugin; });
+```
+
+```html
+<script type="module" src="dashboard_adapter.js?v=7"></script>
+```
+
+---
+
+### 8.7 Optional polish
+
+**`web/app.js`** — progress step labels:
+
+```javascript
+ndvi: [
+  "Uploading files…",
+  "Computing NDVI…",
+  "Loading census tracts…",
+  "Joining NDVI to tracts…",
+  "Finalizing dashboard…",
+],
+```
+
+**`backend/chat/dashboard.py`** — avoid LST-themed chat for NDVI:
+
+```python
+NDVI_SYSTEM_PROMPT = (
+    "You are a geospatial assistant for an NDVI vegetation dashboard. "
+    "Key tract field: ndvi_mean (roughly -1 to +1, higher = greener). "
+    "Do NOT describe results as land surface temperature or LST. "
+    "Combine ndvi_mean with Census fields for equity questions."
+)
+
+def _system_prompt(context: dict) -> str:
+    model = (context.get("analysis_model") or "").strip().lower()
+    if model == "obia":
+        return OBIA_SYSTEM_PROMPT
+    if model == "ndvi":
+        return NDVI_SYSTEM_PROMPT
+    return LST_SYSTEM_PROMPT
+```
+
+**`backend/projects/compare.py`**:
+
+```python
+"ndvi_mean": ["ndvi", "vegetation", "greenness", "vegetation index"],
+```
+
+---
+
+### 8.8 Run the NDVI smoke test
+
+```bash
+python serve.py
+```
+
+In the browser:
+
+1. Hard-refresh (`Ctrl+Shift+R`)
+2. Ask → **NDVI** → a US city that **overlaps your raster** (e.g. `Round Rock, TX`)
+3. **Add city to project**
+4. Upload your multispectral GeoTIFF (red + NIR bands per `ndvi_core.py`)
+5. **Run NDVI for city**
+6. Confirm redirect to **Your project** with tract choropleth and a numeric bar chart value
+
+**Inspect output on disk:**
+
+```bash
+python -c "
+import geopandas as gpd
+gdf = gpd.read_file('data/projects/PROJECT_ID/cities/CITY_KEY/tracts.gpkg', layer='tracts')
+print(gdf[['GEOID','ndvi_mean']].dropna().head())
+print('non-null tracts:', gdf['ndvi_mean'].notna().sum())
+"
+```
+
+If `non-null tracts: 0`, see [CRS handling](#crs-handling-critical-for-raster-zonal-joins).
 
 ---
 
@@ -924,7 +1373,6 @@ Avoid raw numpy scalars — convert with `float()`, `round()`, or `to_json_safe(
 | Register frontend | `web/dashboard_adapter.js` |
 | Cache bust | `web/index.html` |
 | Progress steps | `web/app.js` |
-| Sample data | `scripts/generate_your_sample_data.py` **(new)** |
 | User docs | `docs/MODELS.md`, `CHANGELOG.md` |
 
 **You typically do not need to modify:** `serve.py`, `backend/api/routes/projects.py`, `gf_frame_map.js`, `gf_frame_shared.js` (if hooks suffice).

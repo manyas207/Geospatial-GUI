@@ -173,6 +173,76 @@
     return CHOROPLETH_LAYER_IDS.some((id) => layerEnabled(id));
   }
 
+  function projectLstCacheKey(field) {
+    const { state } = gf;
+    const ready = state.projectCityList
+      .filter((city) => city.status === "ready" && gf.activeProjectModelId(city) === "lst")
+      .map((city) => `${city.key}:${city.vector_layer?.token || ""}`)
+      .sort()
+      .join("|");
+    return `${state.projectId || ""}:${field}:${ready}`;
+  }
+
+  async function loadCityTractGeojson(city) {
+    const { state } = gf;
+    if (!city?.key) return null;
+
+    const vector =
+      city.vector_layer || state.projectData?.cities?.[city.key]?.vector_layer || null;
+    if (!vector?.geojson_url) return null;
+
+    if (state.tractGeojsonCache.token === vector.token && state.tractGeojsonCache.data) {
+      return state.tractGeojsonCache.data;
+    }
+
+    if (state.projectGeojsonCache[city.key]?.token === vector.token) {
+      return state.projectGeojsonCache[city.key].data;
+    }
+
+    const response = await fetch(vector.geojson_url);
+    if (!response.ok) return null;
+    const data = await response.json();
+    state.projectGeojsonCache[city.key] = { token: vector.token, data };
+    return data;
+  }
+
+  async function ensureProjectLstRange(field) {
+    const { state } = gf;
+    if (state.appMode !== "project" || !field) return null;
+
+    const cacheKey = projectLstCacheKey(field);
+    if (state.projectLstRangeCache?.key === cacheKey) {
+      return state.projectLstRangeCache.range;
+    }
+
+    const cities = state.projectCityList.filter(
+      (city) => city.status === "ready" && gf.activeProjectModelId(city) === "lst"
+    );
+    if (!cities.length) return null;
+
+    const merged = { type: "FeatureCollection", features: [] };
+    for (const city of cities) {
+      const geojson = await loadCityTractGeojson(city);
+      if (geojson?.features?.length) {
+        merged.features.push(...geojson.features);
+      }
+    }
+    if (!merged.features.length) return null;
+
+    const range = fieldValueRange(merged, field);
+    state.projectLstRangeCache = { key: cacheKey, range };
+    return range;
+  }
+
+  async function resolveLegendRange(geojson, field) {
+    const { state } = gf;
+    if (!usesLocalValueScale(field)) return null;
+    if (state.lstScaleMode === "project" && state.appMode === "project") {
+      return ensureProjectLstRange(field);
+    }
+    return fieldValueRange(geojson, field);
+  }
+
   function updateLstScaleUI() {
     const { state, dom } = gf;
     if (!dom.lstScaleWrapEl) return;
@@ -180,26 +250,40 @@
     const plugin = activePlugin();
     const show = plugin?.showsScaleControls(ctx) || false;
     dom.lstScaleWrapEl.hidden = !show;
+
+    const readyLstCount = state.projectCityList.filter(
+      (city) => city.status === "ready" && gf.activeProjectModelId(city) === "lst"
+    ).length;
+    const projectBtn = dom.lstScaleWrapEl.querySelector('[data-gf-lst-scale="project"]');
+    if (projectBtn) {
+      projectBtn.hidden = readyLstCount < 2;
+      projectBtn.disabled = readyLstCount < 2;
+    }
+    if (readyLstCount < 2 && state.lstScaleMode === "project") {
+      state.lstScaleMode = "local";
+      localStorage.setItem("gf_lst_scale_mode", "local");
+    }
+
     dom.lstScaleWrapEl.querySelectorAll("[data-gf-lst-scale]").forEach((btn) => {
       btn.classList.toggle("is-active", btn.getAttribute("data-gf-lst-scale") === state.lstScaleMode);
     });
   }
 
-  function setLstScaleMode(mode) {
+  async function setLstScaleMode(mode) {
     const { state } = gf;
-    state.lstScaleMode = mode === "fixed" ? "fixed" : "local";
+    state.lstScaleMode = mode === "project" ? "project" : "local";
     localStorage.setItem("gf_lst_scale_mode", state.lstScaleMode);
     updateLstScaleUI();
-    refreshTractChoropleth();
+    await refreshTractChoropleth();
     updateLegend();
   }
 
-  function refreshTractChoropleth() {
+  async function refreshTractChoropleth() {
     const { state } = gf;
     if (!state.map || !state.mapReady || !state.tractGeojsonCache.data) return;
     const field = activeChoroplethField();
     if (!field) return;
-    upsertTractLayers(state.tractGeojsonCache.data, field);
+    await upsertTractLayers(state.tractGeojsonCache.data, field);
   }
 
   function layerEnabled(layerId) {
@@ -558,6 +642,12 @@
     if (!response.ok) throw new Error("Could not load tract GeoJSON.");
     const data = await response.json();
     state.tractGeojsonCache = { token: vector.token, data };
+    if (state.appMode === "project") {
+      const city = gf.getCities()[state.activeCityIndex];
+      if (city?.key) {
+        state.projectGeojsonCache[city.key] = { token: vector.token, data };
+      }
+    }
     return data;
   }
 
@@ -570,14 +660,14 @@
     ];
   }
 
-  function upsertTractLayers(geojson, field) {
+  async function upsertTractLayers(geojson, field) {
     const { state } = gf;
     if (!state.map || !state.mapReady) return;
 
     clearTractHover();
     state.popup.remove();
 
-    state.tractLegendRange = usesLocalValueScale(field) ? fieldValueRange(geojson, field) : null;
+    state.tractLegendRange = await resolveLegendRange(geojson, field);
     const fillPaint = {
       ...choroplethFillPaint(field, state.tractLegendRange),
       "fill-opacity": fillOpacityPaint(),
@@ -679,7 +769,7 @@
         if (!geojson) throw new Error("No vector layer for this city.");
 
         const field = activeChoroplethField();
-        upsertTractLayers(geojson, field);
+        await upsertTractLayers(geojson, field);
         refreshMapSize();
         fitMapBounds(state.cityLayersData.vector_layer?.bounds_wgs84);
         showVectorLayers();

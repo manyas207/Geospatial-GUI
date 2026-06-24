@@ -11,8 +11,12 @@ from backend.chat.equity_burden import (
     analyze_project_equity_burden,
     is_equity_burden_question,
 )
+from backend.chat.layer_correlation import (
+    analyze_layer_correlations,
+    is_correlation_question,
+)
 from backend.config import CITY_LAYERS_CACHE, PROJECTS_DIR
-from backend.core.rate_limit import chat_max_question_length
+from backend.core.limits import chat_max_question_length
 from backend.core.schemas import FollowupRequest, FollowupResponse
 from backend.layers.orchestrator import decode_preview_token
 from backend.layers.tract_query import query_tract_gpkg, query_tract_layer
@@ -87,7 +91,7 @@ def _enrich_tract_query(
     project_id: str | None,
     token: str | None,
 ) -> None:
-    if not token or is_equity_burden_question(question):
+    if not token or is_equity_burden_question(question) or is_correlation_question(question):
         return
 
     try:
@@ -101,6 +105,40 @@ def _enrich_tract_query(
             )
     except (ValueError, FileNotFoundError) as exc:
         logger.debug("Tract query failed: %s", exc)
+
+
+def _enrich_layer_correlations(
+    context: dict,
+    question: str,
+    project_id: str | None,
+    token: str | None,
+) -> None:
+    if not is_correlation_question(question) or context.get("layer_correlations"):
+        return
+
+    if token and project_id and ":" in token:
+        _, city_key = token.split(":", 1)
+        project = _try_get_project(project_id)
+        if project and _project_model_id(project) == "obia":
+            return
+        try:
+            gpkg = get_city_gpkg_path(project_id, city_key, projects_dir=PROJECTS_DIR)
+            city_entry = (project.get("cities") or {}).get(city_key) or {} if project else {}
+            city_name = city_entry.get("name") or city_entry.get("address")
+            context["layer_correlations"] = analyze_layer_correlations(
+                gpkg, city_name=city_name
+            )
+        except FileNotFoundError:
+            logger.debug("Layer correlation GPKG missing for %s/%s", project_id, city_key)
+        return
+
+    if token and not (project_id and ":" in token):
+        try:
+            gpkg_path = decode_preview_token(token.strip(), CITY_LAYERS_CACHE)
+            if gpkg_path.suffix.lower() == ".gpkg":
+                context["layer_correlations"] = analyze_layer_correlations(gpkg_path)
+        except (ValueError, FileNotFoundError) as exc:
+            logger.debug("Preview-token layer correlation failed: %s", exc)
 
 
 @router.post("/api/followup", response_model=FollowupResponse)
@@ -142,6 +180,7 @@ async def followup(body: FollowupRequest, request: Request) -> FollowupResponse:
             )
 
         _enrich_equity_burden(context, question, project_id, token)
+        _enrich_layer_correlations(context, question, project_id, token)
         _enrich_tract_query(context, question, project_id, token)
 
         answer = answer_about_dashboard(question, context)

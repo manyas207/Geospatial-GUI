@@ -138,6 +138,8 @@ async def upload_project_city_run(
             model,
         )
         return JSONResponse(content=get_project(project_id, projects_dir=PROJECTS_DIR))
+    except HTTPException:
+        raise
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
@@ -169,6 +171,8 @@ async def upload_project_city_lst(
             saved,
         )
         return JSONResponse(content=get_project(project_id, projects_dir=PROJECTS_DIR))
+    except HTTPException:
+        raise
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:

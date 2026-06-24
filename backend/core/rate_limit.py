@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-import os
 import time
 from collections import defaultdict
 from threading import Lock
+
+from backend.core.limits import chat_rate_limit_max, chat_rate_limit_window
 
 
 class RateLimiter:
@@ -34,18 +35,5 @@ class RateLimiter:
             return True, None
 
 
-def _int_env(name: str, default: int) -> int:
-    try:
-        return int(os.environ.get(name, str(default)))
-    except ValueError:
-        return default
-
-
 def chat_rate_limiter() -> RateLimiter:
-    max_requests = _int_env("CHAT_RATE_LIMIT_MAX", 15)
-    window_seconds = _int_env("CHAT_RATE_LIMIT_WINDOW", 60)
-    return RateLimiter(max_requests, float(window_seconds))
-
-
-def chat_max_question_length() -> int:
-    return max(100, _int_env("CHAT_MAX_QUESTION_LENGTH", 2000))
+    return RateLimiter(chat_rate_limit_max(), float(chat_rate_limit_window()))
