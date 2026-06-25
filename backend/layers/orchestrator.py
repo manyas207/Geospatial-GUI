@@ -90,20 +90,16 @@ def _geojson_to_gdf(geojson: dict) -> gpd.GeoDataFrame:
 
 
 def _ensure_vector_layer(geojson: dict, address: str, cache_dir: Path) -> dict:
-    """Write tract GeoPackage + GeoJSON once per city; return API URLs for MapLibre."""
+    """Write tract GeoPackage once per city; GeoJSON is derived on demand."""
     gpkg_dir = cache_dir / "gpkg"
-    geojson_dir = cache_dir / "geojson"
     gpkg_dir.mkdir(parents=True, exist_ok=True)
-    geojson_dir.mkdir(parents=True, exist_ok=True)
 
     key = city_cache_key(address)
     gpkg_path = gpkg_dir / f"{key}.gpkg"
-    geojson_path = geojson_dir / f"{key}.geojson"
 
-    if not gpkg_path.exists() or not geojson_path.exists():
+    if not gpkg_path.exists():
         gdf = _geojson_to_gdf(geojson)
         gdf.to_file(gpkg_path, driver="GPKG", layer=TRACT_LAYER)
-        geojson_path.write_text(json.dumps(geojson), encoding="utf-8")
 
     gdf = _geojson_to_gdf(geojson)
     west, south, east, north = gdf.total_bounds

@@ -61,12 +61,10 @@ def _post_process_lst(result: ModelResult, ctx: RunContext) -> PostProcessResult
         raise FileNotFoundError("Census tract layer not found after city-layers load.")
 
     out_gpkg = ctx.city_dir / "tracts.gpkg"
-    out_geojson = ctx.city_dir / "tracts.geojson"
     enriched = enrich_tracts_with_lst(
         gdf,
         Path(geotiff),
         out_gpkg=out_gpkg,
-        out_geojson=out_geojson,
     )
 
     stats_updates = dict(result.stats)

@@ -4,38 +4,42 @@ Comprehensive end-to-end guide for registering a new geospatial analysis model i
 
 A model spans **three layers** that must agree on the same `id` (e.g. `ndvi`):
 
-| Layer | Location | What it does |
-|-------|----------|--------------|
-| **Backend pipeline** | `models/your_model.py` | Runs on uploaded files, writes artifacts, joins results to census tracts |
-| **API exposure** | `models/registry.py` | Auto-registers `GET /api/models`; existing run routes accept `?model=your_id` |
-| **Frontend plugin** | `web/plugins/your_plugin.js` | Map colors, legends, bar charts, Ask labels, chat hints |
+
+| Layer                | Location                     | What it does                                                                  |
+| -------------------- | ---------------------------- | ----------------------------------------------------------------------------- |
+| **Backend pipeline** | `models/your_model.py`       | Runs on uploaded files, writes artifacts, joins results to census tracts      |
+| **API exposure**     | `models/registry.py`         | Auto-registers `GET /api/models`; existing run routes accept `?model=your_id` |
+| **Frontend plugin**  | `web/plugins/your_plugin.js` | Map colors, legends, bar charts, Ask labels, chat hints                       |
+
 
 **Reference implementations today:**
 
-| Model | Backend | Core pipeline | Zonal join | Frontend plugin |
-|-------|---------|---------------|------------|-----------------|
-| LST | `models/lst_model.py` | `models/lst_pipeline.py` | `backend/pipelines/lst_zonal.py` | `web/plugins/lst_plugin.js` |
-| OBIA | `models/obia_model.py` | `models/obia_core.py` | `backend/pipelines/obia_zonal.py` | `web/plugins/obia_plugin.js` |
+
+| Model | Backend                | Core pipeline            | Zonal join                        | Frontend plugin              |
+| ----- | ---------------------- | ------------------------ | --------------------------------- | ---------------------------- |
+| LST   | `models/lst_model.py`  | `models/lst_pipeline.py` | `backend/pipelines/lst_zonal.py`  | `web/plugins/lst_plugin.js`  |
+| OBIA  | `models/obia_model.py` | `models/obia_core.py`    | `backend/pipelines/obia_zonal.py` | `web/plugins/obia_plugin.js` |
+
 
 ---
 
 ## Table of contents
 
-0. [Local dev setup](#local-dev-setup)
-1. [Before you start](#before-you-start)
-2. [Architecture overview](#architecture-overview)
-3. [Quick checklist](#quick-checklist)
-4. [Part 1 — Backend](#part-1--backend)
-5. [Part 2 — Frontend plugin](#part-2--frontend-plugin)
-6. [Part 3 — Ask tab integration](#part-3--ask-tab-integration)
-7. [Part 4 — Dashboard integration](#part-4--dashboard-integration)
-8. [Part 5 — Chat, comparison, and PDF](#part-5--chat-comparison-and-pdf)
-9. [Part 6 — Manifest and API](#part-6--manifest-and-api)
-10. [Part 7 — Testing and debugging](#part-7--testing-and-debugging)
-11. [Part 8 — Worked example (NDVI, end-to-end)](#part-8--worked-example-ndvi-end-to-end)
-12. [Part 9 — Design guidelines](#part-9--design-guidelines)
-13. [Part 10 — File map](#part-10--file-map)
-14. [Related docs](#related-docs)
+1. [Local dev setup](#local-dev-setup)
+2. [Before you start](#before-you-start)
+3. [Architecture overview](#architecture-overview)
+4. [Quick checklist](#quick-checklist)
+5. [Part 1 — Backend](#part-1--backend)
+6. [Part 2 — Frontend plugin](#part-2--frontend-plugin)
+7. [Part 3 — Ask tab integration](#part-3--ask-tab-integration)
+8. [Part 4 — Dashboard integration](#part-4--dashboard-integration)
+9. [Part 5 — Chat, comparison, and PDF](#part-5--chat-comparison-and-pdf)
+10. [Part 6 — Manifest and API](#part-6--manifest-and-api)
+11. [Part 7 — Testing and debugging](#part-7--testing-and-debugging)
+12. [Part 8 — Worked example (NDVI, end-to-end)](#part-8--worked-example-ndvi-end-to-end)
+13. [Part 9 — Design guidelines](#part-9--design-guidelines)
+14. [Part 10 — File map](#part-10--file-map)
+15. [Related docs](#related-docs)
 
 ---
 
@@ -73,7 +77,7 @@ Edit `.env` and set at minimum:
 CENSUS_API_KEY=your_key_here
 ```
 
-Free key: https://api.census.gov/data/key_signup.html
+Free key: [https://api.census.gov/data/key_signup.html](https://api.census.gov/data/key_signup.html)
 
 The census key is required for tract boundaries and ACS demographics on the dashboard. Without it, `post_process` may fail when loading tracts.
 
@@ -89,25 +93,26 @@ You should see:
 Open: http://127.0.0.1:8765/
 ```
 
-Open that URL in a browser. API docs: http://127.0.0.1:8765/docs
+Open that URL in a browser. API docs: [http://127.0.0.1:8765/docs](http://127.0.0.1:8765/docs)
 
 **If port 8765 is already in use:** another `python serve.py` is still running. Close that terminal or end the process, then start again.
 
 ### 4. Verify the stack (before you add code)
 
-| Check | How |
-|-------|-----|
-| Server healthy | http://127.0.0.1:8765/ loads the Ask page |
-| Models registered | http://127.0.0.1:8765/api/models returns `lst` and `obia` |
-| Census works | Demo tab → pick a city → tract map shows demographics (not all `—`) |
-| Registry import | `python -c "from models.registry import list_models; print([m.id for m in list_models()])"` |
+
+| Check             | How                                                                                           |
+| ----------------- | --------------------------------------------------------------------------------------------- |
+| Server healthy    | [http://127.0.0.1:8765/](http://127.0.0.1:8765/) loads the Ask page                           |
+| Models registered | [http://127.0.0.1:8765/api/models](http://127.0.0.1:8765/api/models) returns `lst` and `obia` |
+| Census works      | Demo tab → pick a city → tract map shows demographics (not all `—`)                           |
+| Registry import   | `python -c "from models.registry import list_models; print([m.id for m in list_models()])"`   |
+
 
 After you add a model, **restart `python serve.py`** (no auto-reload) and **hard-refresh** the browser (`Ctrl+Shift+R`), or bump `?v=` on changed JS files in `web/index.html`.
 
 **Windows users:** see [SETUP_WINDOWS.md](SETUP_WINDOWS.md) for a full walkthrough.
 
 ---
-
 
 ### Prerequisites
 
@@ -118,13 +123,15 @@ After you add a model, **restart `python serve.py`** (no auto-reload) and **hard
 
 ### Choose your integration path
 
-| Your output | Recommended path | Dashboard |
-|-------------|------------------|-----------|
-| Per-tract numeric field (mean LST, mean NDVI, …) | `vector_join: "tract_zonal"` + continuous choropleth | Heat & Equity (`equity`) |
-| Per-tract categorical field (dominant land-cover class) | `vector_join: "tract_zonal"` + categorical choropleth plugin | Heat & Equity (`equity`) |
-| Scene-level stats only (no tract map) | Possible but **not supported well** — equity frame expects tract GeoJSON | Avoid for now |
 
-The backend contract (`models/contract.py`) only declares `dashboard: "equity"` today. Plan on producing enriched `tracts.gpkg` / `tracts.geojson` under each city folder.
+| Your output                                             | Recommended path                                                         | Dashboard                |
+| ------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------ |
+| Per-tract numeric field (mean LST, mean NDVI, …)        | `vector_join: "tract_zonal"` + continuous choropleth                     | Heat & Equity (`equity`) |
+| Per-tract categorical field (dominant land-cover class) | `vector_join: "tract_zonal"` + categorical choropleth plugin             | Heat & Equity (`equity`) |
+| Scene-level stats only (no tract map)                   | Possible but **not supported well** — equity frame expects tract GeoJSON | Avoid for now            |
+
+
+The backend contract (`models/contract.py`) only declares `dashboard: "equity"` today. Plan on producing enriched **`tracts.gpkg`** under each city folder (the durable vector output). GeoJSON for the map is served on demand from that GPKG via `GET .../geojson` — see [Disk retention after success](#19-disk-retention-after-success).
 
 ### Model id conventions
 
@@ -159,20 +166,25 @@ sequenceDiagram
   Pipe-->>Svc: ModelResult
   Svc->>Pipe: spec.enrich → post_process
   Pipe-->>Svc: PostProcessResult (tracts.gpkg, vector_fields)
-  Svc->>Svc: manifest status=ready, run_stats
+  Svc->>Svc: cleanup_city_after_success (drop uploads/intermediates)
+  Svc->>Svc: scrub_artifact_paths → manifest status=ready, run_stats
   Ask->>API: poll GET /api/projects/{id}
   Ask->>Dash: redirect to Your project
   Dash->>Dash: DashboardAdapter + your plugin
 ```
 
+
+
 ### City status state machine
 
-| Status | Meaning | Set by |
-|--------|---------|--------|
-| `pending` | City registered, no successful run yet | `register_city()` |
-| `processing` | Upload received; background run in progress | `mark_city_processing()` |
-| `ready` | Pipeline + post_process succeeded | `run_city_model_upload()` |
-| `error` | Exception during run; see `city.error` | `run_city_model_upload()` |
+
+| Status       | Meaning                                     | Set by                    |
+| ------------ | ------------------------------------------- | ------------------------- |
+| `pending`    | City registered, no successful run yet      | `register_city()`         |
+| `processing` | Upload received; background run in progress | `mark_city_processing()`  |
+| `ready`      | Pipeline + post_process succeeded           | `run_city_model_upload()` |
+| `error`      | Exception during run; see `city.error`      | `run_city_model_upload()` |
+
 
 The Ask tab polls `GET /api/projects/{id}` every few seconds until the city is `ready` or `error`.
 
@@ -196,6 +208,7 @@ backend/
     dashboard.py       # Ollama system prompts per analysis_model
   core/
     uploads.py         # ALLOWED_UPLOAD_SUFFIXES validation
+    storage.py         # post-run cleanup, run_stats path scrubbing
     constants.py       # RASTER_SUFFIXES, SHAPEFILE_SUFFIXES, TRACT_LAYER
 
 web/
@@ -210,15 +223,25 @@ web/
 
 ### On-disk layout (per city)
 
+**During a run** (uploads and pipeline scratch space exist on disk):
+
 ```
 data/projects/{project_id}/
   manifest.json
   cities/{city_key}/
-    uploads/              # saved multipart files
-    ndvi_output/          # your pipeline artifacts (convention)
-    tracts.gpkg           # census + your columns (layer: tracts)
-    tracts.geojson        # MapLibre source
+    uploads/              # saved multipart files (deleted after success by default)
+    your_output/          # pipeline intermediates (model-specific; see §1.9)
+    tracts.gpkg           # written in post_process (layer: tracts)
+    tracts.geojson        # optional; deleted after success (API reads GPKG instead)
 ```
+
+**After a successful run** (default retention — see [DATA.md](DATA.md)):
+
+| Kept on disk | Removed on disk |
+| ------------ | --------------- |
+| `manifest.json`, `tracts.gpkg`, numeric `run_stats` in manifest | `uploads/`, LST `uploads/results/`, OBIA `obia_output/`, `tracts.geojson` |
+
+Set `KEEP_UPLOADS_AFTER_RUN=true` or `KEEP_INTERMEDIATE_ARTIFACTS=true` in `.env` to retain raw inputs or pipeline intermediates while debugging.
 
 ---
 
@@ -229,6 +252,7 @@ data/projects/{project_id}/
 - [ ] **3.** Create `models/your_model.py` (`ModelSpec`, `run`, `post_process`)
 - [ ] **4.** Register in `models/registry.py`
 - [ ] **5.** (Optional) Add env vars to `.env.example`
+- [ ] **5b.** If your pipeline writes a model-specific scratch folder, register it in `backend/core/storage.py` → `cleanup_city_after_success()` (see §1.9)
 - [ ] **6.** (Optional) Add `METRIC_ALIASES` in `backend/projects/compare.py`
 - [ ] **7.** (Optional) Add chat system prompt in `backend/chat/dashboard.py`
 - [ ] **8.** Restart `python serve.py` — verify `GET /api/models`
@@ -246,48 +270,56 @@ data/projects/{project_id}/
 
 #### `ModelSpec` fields
 
-| Field | Required | Purpose |
-|-------|----------|---------|
-| `id` | Yes | URL slug (`?model=ndvi`) |
-| `label` | Yes | Ask dropdown label |
-| `description` | Yes | API / docs text |
-| `input_schema` | Yes | `InputField` tuple — Ask upload hints |
-| `dashboard` | Yes | `"equity"` (only wired type) |
-| `vector_join` | Yes | `"tract_zonal"` or `"none"` |
-| `vector_fields` | Yes | Tract column names for map + chat |
-| `primary_metric` | Yes | Key in `run_stats` for charts and comparison |
-| `pick_primary` | If multi-file | Pick main raster from mixed uploads |
-| `run` | Yes | `(paths, RunContext) → ModelResult` |
-| `post_process` | Strongly recommended | `(ModelResult, RunContext) → PostProcessResult` |
+
+| Field            | Required             | Purpose                                         |
+| ---------------- | -------------------- | ----------------------------------------------- |
+| `id`             | Yes                  | URL slug (`?model=ndvi`)                        |
+| `label`          | Yes                  | Ask dropdown label                              |
+| `description`    | Yes                  | API / docs text                                 |
+| `input_schema`   | Yes                  | `InputField` tuple — Ask upload hints           |
+| `dashboard`      | Yes                  | `"equity"` (only wired type)                    |
+| `vector_join`    | Yes                  | `"tract_zonal"` or `"none"`                     |
+| `vector_fields`  | Yes                  | Tract column names for map + chat               |
+| `primary_metric` | Yes                  | Key in `run_stats` for charts and comparison    |
+| `pick_primary`   | If multi-file        | Pick main raster from mixed uploads             |
+| `run`            | Yes                  | `(paths, RunContext) → ModelResult`             |
+| `post_process`   | Strongly recommended | `(ModelResult, RunContext) → PostProcessResult` |
+
 
 #### `RunContext`
 
-| Field | Path / meaning |
-|-------|----------------|
-| `address` | `"Round Rock, TX"` |
-| `city_dir` | `data/projects/{id}/cities/{key}/` |
-| `uploads_dir` | `city_dir/uploads/` |
-| `city_layers_cache` | `data/city_layers_cache/` |
+
+| Field               | Path / meaning                     |
+| ------------------- | ---------------------------------- |
+| `address`           | `"Round Rock, TX"`                 |
+| `city_dir`          | `data/projects/{id}/cities/{key}/` |
+| `uploads_dir`       | `city_dir/uploads/`                |
+| `city_layers_cache` | `data/city_layers_cache/`          |
+
 
 #### `ModelResult`
 
-| Field | Stored as |
-|-------|-----------|
-| `stats` | `run_stats` in manifest (must be JSON-serializable) |
-| `logs` | `run_logs` (truncated to 8k chars) |
-| `artifacts` | Not stored directly — use in `post_process` |
-| `primary_raster` | `primary_raster` filename in manifest |
+
+| Field            | Stored as                                           |
+| ---------------- | --------------------------------------------------- |
+| `stats`          | `run_stats` in manifest (must be JSON-serializable; file paths scrubbed — see §1.9) |
+| `logs`           | `run_logs` (truncated to 8k chars)                  |
+| `artifacts`      | In-memory only for the same run — use in `post_process`, not persisted |
+| `primary_raster` | `primary_raster` filename in manifest               |
+
 
 Use `backend.core.json_util.to_json_safe()` patterns if stats contain numpy types.
 
 #### `PostProcessResult`
 
-| Field | Purpose |
-|-------|---------|
-| `enriched_gdf` | Written to `tracts.gpkg` / `tracts.geojson` by your zonal helper |
-| `stats_updates` | Merged into `run_stats` (e.g. tract-level means, warnings) |
-| `vector_fields` | Full column list on tract layer (include census fields) |
-| `city_fields` | `summary`, `map_layers`, `geocode`, `bounds_wgs84` |
+
+| Field           | Purpose                                                          |
+| --------------- | ---------------------------------------------------------------- |
+| `enriched_gdf`  | Written to `tracts.gpkg` by your zonal helper (`tracts.geojson` optional during run; not kept by default) |
+| `stats_updates` | Merged into `run_stats` (e.g. tract-level means, warnings)       |
+| `vector_fields` | Full column list on tract layer (include census fields)          |
+| `city_fields`   | `summary`, `map_layers`, `geocode`, `bounds_wgs84`               |
+
 
 **Standard census columns** — always include `VECTOR_QUERY_FIELDS` from `backend/layers/orchestrator.py`:
 
@@ -307,8 +339,9 @@ models/ndvi_model.py    ← pick files, call core, return ModelResult
 **Rules:**
 
 - Raise `ValueError` with actionable messages — they become `city.error` in the UI
-- Write outputs under `ctx.city_dir` (e.g. `ctx.city_dir / "ndvi_output"`)
-- Put durable paths in `artifacts` for `post_process`
+- Write scratch outputs under `ctx.city_dir` (e.g. `ctx.city_dir / "ndvi_output"`) — treat as ephemeral unless you opt into retention (§1.9)
+- Put **intermediate** file paths in `artifacts` (or `stats` during the run) so `post_process` can read them; do **not** expect those paths to survive in the manifest
+- Persist only **numeric summaries** and warnings in `stats_updates` / `run_stats` (no on-disk paths)
 - Capture stdout into `logs` if useful (OBIA uses `contextlib.redirect_stdout`)
 
 **Multi-file uploads:** All files land in one list. Sort by extension:
@@ -328,10 +361,12 @@ def _pick_raster(paths: list[Path]) -> Path:
 
 Validated in `backend/core/uploads.py` via `ALLOWED_UPLOAD_SUFFIXES`:
 
-| Category | Extensions |
-|----------|------------|
-| Rasters | `.tif`, `.tiff`, `.geotiff`, `.gtiff` |
+
+| Category           | Extensions                                             |
+| ------------------ | ------------------------------------------------------ |
+| Rasters            | `.tif`, `.tiff`, `.geotiff`, `.gtiff`                  |
 | Shapefile sidecars | `.shp`, `.shx`, `.dbf`, `.prj`, `.cpg`, `.sbn`, `.sbx` |
+
 
 To support new formats (e.g. `.nc`, `.zip`), extend `backend/core/constants.py` and document the change.
 
@@ -342,7 +377,7 @@ To support new formats (e.g. `.nc`, `.zip`), extend `backend/core/constants.py` 
 1. `load_city_layers(address, cache_dir=ctx.city_layers_cache)` — fetches TIGER + ACS
 2. Read cached tracts: `geojson/{cache_key}.geojson` or `gpkg/{cache_key}.gpkg` layer `tracts`
 3. Run zonal helper → add your columns
-4. Write `ctx.city_dir / "tracts.gpkg"` and `tracts.geojson`
+4. Write `ctx.city_dir / "tracts.gpkg"` (required). Optionally write `tracts.geojson` for faster same-run reads — it is removed after success; the map API serves GeoJSON from the GPKG on demand
 5. Return `PostProcessResult`
 
 **Numeric rasters (LST-style)** — `backend/pipelines/lst_zonal.py`:
@@ -394,12 +429,14 @@ print("Tract bounds (raster CRS):", tracts_proj.total_bounds)
 
 **Common mistakes:**
 
-| Mistake | Symptom |
-|---------|---------|
-| Mask in WGS84 while raster is UTM | All tract values `null` |
-| Raster covers Brazil, city is `Dallas, TX` | `tract_zonal_warning`, empty choropleth |
-| Raster missing CRS (no `.prj` / tags) | Wrong reprojection or failed mask |
+
+| Mistake                                          | Symptom                                     |
+| ------------------------------------------------ | ------------------------------------------- |
+| Mask in WGS84 while raster is UTM                | All tract values `null`                     |
+| Raster covers Brazil, city is `Dallas, TX`       | `tract_zonal_warning`, empty choropleth     |
+| Raster missing CRS (no `.prj` / tags)            | Wrong reprojection or failed mask           |
 | Using scene-wide stats only, skipping zonal join | Map shows census layers but not your metric |
+
 
 **Warnings:** If no values overlap tracts, set in `stats_updates`:
 
@@ -429,13 +466,15 @@ Import errors here prevent the server from starting — run `python serve.py` an
 
 `input_schema` drives Ask UI via `GET /api/models`:
 
-| `InputField` | Effect |
-|--------------|--------|
-| `name` | Logical group id (informational) |
-| `label` | File drop title (first field wins in `fileDropTitle`) |
-| `accept` | Combined for browser filter (`dashboard_adapter.inputAccept`) |
-| `hint` | Help text under drop zone |
-| `required` | Documented in API schema |
+
+| `InputField` | Effect                                                        |
+| ------------ | ------------------------------------------------------------- |
+| `name`       | Logical group id (informational)                              |
+| `label`      | File drop title (first field wins in `fileDropTitle`)         |
+| `accept`     | Combined for browser filter (`dashboard_adapter.inputAccept`) |
+| `hint`       | Help text under drop zone                                     |
+| `required`   | Documented in API schema                                      |
+
 
 **Note:** All files are sent as multipart field `files` — the server does not enforce per-field separation. Your `run()` must classify uploads.
 
@@ -456,9 +495,39 @@ Document in `.env.example`, [DATA.md](DATA.md), and your [MODELS.md](MODELS.md) 
 2. Calls `run_model()` → your `run`
 3. Merges `post_process` stats into `run_stats`
 4. Sets `status: ready`, `vector_fields`, `lst_stats` alias
-5. On exception: `status: error`, `error: str(exc)`
+5. Calls `cleanup_city_after_success()` — frees uploads and known intermediate dirs (§1.9)
+6. Calls `scrub_artifact_paths()` — strips on-disk path keys from `run_stats` before saving manifest
+7. On exception: `status: error`, `error: str(exc)` (uploads and partial outputs are **not** cleaned up — aids debugging)
 
 `backend/api/routes/projects.py` runs this in a **FastAPI BackgroundTask** so the HTTP response returns immediately with `status: processing`.
+
+### 1.9 Disk retention after success
+
+Implemented in `backend/core/storage.py`. After `post_process` succeeds, the service frees disk space while keeping everything the dashboard needs.
+
+**Default cleanup** (`cleanup_city_after_success`):
+
+| Target | When removed |
+| ------ | ------------ |
+| `cities/{key}/uploads/` | Always (unless `KEEP_UPLOADS_AFTER_RUN=true`) |
+| `cities/{key}/uploads/results/` | LST model, unless `KEEP_INTERMEDIATE_ARTIFACTS=true` |
+| `cities/{key}/obia_output/` | OBIA model, unless `KEEP_INTERMEDIATE_ARTIFACTS=true` |
+| `cities/{key}/tracts.geojson` | Always (duplicate of GPKG; API reads GPKG on demand) |
+
+**What always remains:** `manifest.json`, `tracts.gpkg`, and JSON-safe `run_stats` (means, counts, warnings — not file paths).
+
+**`scrub_artifact_paths`** removes these keys from persisted `run_stats` if present: `geotiff`, `classified_gpkg`, `classified_tif`, `segments_gpkg`, `validation_gpkg`. Use `ModelResult.artifacts` for paths needed between `run` and `post_process` in the same request.
+
+**Adding a new model with scratch output:** if your pipeline writes a folder other than the LST/OBIA paths above (e.g. `ndvi_output/`), add a branch in `cleanup_city_after_success()`:
+
+```python
+elif model_id == "ndvi":
+    _remove_path(city_dir / "ndvi_output")
+```
+
+Or set `KEEP_INTERMEDIATE_ARTIFACTS=true` in `.env` while developing (retains LST/OBIA intermediates only — register your folder for automatic cleanup in production).
+
+**Debugging failed runs:** cleanup runs only on **success**. Failed cities keep `uploads/` and partial outputs. For successful runs, set `KEEP_UPLOADS_AFTER_RUN=true` or `KEEP_INTERMEDIATE_ARTIFACTS=true` in `.env` — see [DATA.md](DATA.md).
 
 ---
 
@@ -534,63 +603,69 @@ Browsers cache static JS files. After editing `dashboard_adapter.js` or a plugin
 
 Merged in `mergePresentation()`: API spec → plugin `presentation` → `DEFAULT_PRESENTATION` in `dashboard_adapter.js`.
 
-| Key | Required? | Used by | Notes |
-|-----|-----------|---------|-------|
-| `id` (on plugin root) | **Yes** | Registry lookup | Must match `ModelSpec.id` |
-| `choroplethField` | **Yes** | Map tract fill | Must match a column in `tracts.gpkg` |
-| `primaryMetricKeys` | **Yes*** | Bar chart, city badge | *Or rely on API `primary_metric` only |
-| `runVerb` | **Yes** | Ask run button | e.g. `"Run NDVI for city"` |
-| `runProgressStart` | Recommended | Ask progress bar | Generic fallback exists in `app.js` |
-| `runProgressWorking` | Recommended | Ask progress bar | Generic fallback exists |
-| `barChartLabelProject` | Recommended | Cross-city bar chart | Default: `"Primary metric"` |
-| `barChartHeadingProject` | Recommended | Bar chart title | |
-| `analysisLayerLabel` | Recommended | Layer toggle | Default: `"Analysis result"` |
-| `legendLabel` | Recommended | Legend title | Used in generic key queries |
-| `metricUnit` | Optional | Value formatting | e.g. `"°C"`; empty for unitless NDVI |
-| `chatContextSummary` | Recommended | Chat system context | `{city}` is replaced at runtime |
-| `chatAnalysisLabel` | Optional | Suggested query prompts | |
-| `cardTitle` | Optional | Ask card heading | |
-| `portfolioHint` | Optional | Ask portfolio text | |
-| `fileDropTitle` | Optional | Upload zone | API `input_schema.label` is fallback |
-| `dashboardTitle` | Optional | Dashboard H1 | LST/OBIA customize; default is generic |
-| `dashboardSubtitle` | Optional | Dashboard subtitle | |
-| `queryPlaceholder` | Optional | Chat textarea | |
-| `emptyProjectHint` | Optional | Empty project state | |
-| `sourcesAnalysis` | Optional | Sources footnote | |
-| `tractPopupMetricLabel` | Optional | Map popup | Default uses `legendLabel` |
-| `tractDetailLabel` | Optional | Tract sidebar | |
-| `primaryMetricSuffix` | Optional | Short badge | OBIA uses `" seg"` |
-| `classLabels` / `classColors` | Optional | Categorical maps only | OBIA |
+
+| Key                           | Required?   | Used by                 | Notes                                  |
+| ----------------------------- | ----------- | ----------------------- | -------------------------------------- |
+| `id` (on plugin root)         | **Yes**     | Registry lookup         | Must match `ModelSpec.id`              |
+| `choroplethField`             | **Yes**     | Map tract fill          | Must match a column in `tracts.gpkg`   |
+| `primaryMetricKeys`           | **Yes***    | Bar chart, city badge   | *Or rely on API `primary_metric` only  |
+| `runVerb`                     | **Yes**     | Ask run button          | e.g. `"Run NDVI for city"`             |
+| `runProgressStart`            | Recommended | Ask progress bar        | Generic fallback exists in `app.js`    |
+| `runProgressWorking`          | Recommended | Ask progress bar        | Generic fallback exists                |
+| `barChartLabelProject`        | Recommended | Cross-city bar chart    | Default: `"Primary metric"`            |
+| `barChartHeadingProject`      | Recommended | Bar chart title         |                                        |
+| `analysisLayerLabel`          | Recommended | Layer toggle            | Default: `"Analysis result"`           |
+| `legendLabel`                 | Recommended | Legend title            | Used in generic key queries            |
+| `metricUnit`                  | Optional    | Value formatting        | e.g. `"°C"`; empty for unitless NDVI   |
+| `chatContextSummary`          | Recommended | Chat system context     | `{city}` is replaced at runtime        |
+| `chatAnalysisLabel`           | Optional    | Suggested query prompts |                                        |
+| `cardTitle`                   | Optional    | Ask card heading        |                                        |
+| `portfolioHint`               | Optional    | Ask portfolio text      |                                        |
+| `fileDropTitle`               | Optional    | Upload zone             | API `input_schema.label` is fallback   |
+| `dashboardTitle`              | Optional    | Dashboard H1            | LST/OBIA customize; default is generic |
+| `dashboardSubtitle`           | Optional    | Dashboard subtitle      |                                        |
+| `queryPlaceholder`            | Optional    | Chat textarea           |                                        |
+| `emptyProjectHint`            | Optional    | Empty project state     |                                        |
+| `sourcesAnalysis`             | Optional    | Sources footnote        |                                        |
+| `tractPopupMetricLabel`       | Optional    | Map popup               | Default uses `legendLabel`             |
+| `tractDetailLabel`            | Optional    | Tract sidebar           |                                        |
+| `primaryMetricSuffix`         | Optional    | Short badge             | OBIA uses `" seg"`                     |
+| `classLabels` / `classColors` | Optional    | Categorical maps only   | OBIA                                   |
+
 
 **Extended reference (LST / OBIA examples):**
 
-| Key | LST example | OBIA example |
-|-----|-------------|--------------|
-| `choroplethField` | `lst_mean_C` | `obia_mode_class` |
+
+| Key                 | LST example                  | OBIA example                        |
+| ------------------- | ---------------------------- | ----------------------------------- |
+| `choroplethField`   | `lst_mean_C`                 | `obia_mode_class`                   |
 | `primaryMetricKeys` | `mean_C`, `tract_mean_lst_C` | `labeled_segments`, `primary_value` |
-| `runVerb` | `LST` | `OBIA` |
-| `metricUnit` | `°C` | `""` |
+| `runVerb`           | `LST`                        | `OBIA`                              |
+| `metricUnit`        | `°C`                         | `""`                                |
+
 
 ### 2.3 Plugin hooks (`web/model_plugin.js`)
 
 Override only when defaults are insufficient.
 
-| Hook | Signature | Purpose |
-|------|-----------|---------|
-| `choroplethField` | `(city, layerId, appMode, analysisLayerId) → string\|null` | Which tract property colors the map |
-| `choroplethFillPaint` | `(field, valueRange, ctx) → MapLibre paint\|null` | Custom `fill-color` expression |
-| `renderLegend` | `(ctx) → {title, low, high, colorStops, showScaleControls}\|null` | Legend HTML |
-| `renderStats` | `(city, runStats) → string` | Stats cards HTML above map |
-| `formatChoroplethValue` | `(value, field) → string` | Popup / legend formatting |
-| `usesLocalValueScale` | `(field) → boolean` | Whether local min/max scaling applies |
-| `showsScaleControls` | `(ctx) → boolean` | Fixed/local scale toggle (LST) |
-| `chatContext` | `(city, runStats) → string` | Extra chat context beyond summary |
-| `chatContextSummary` | `(city) → string` | Default summary template |
-| `keyQueries` | `(ctx) → [{label, prompt, style}]\|null` | Suggested chat buttons; `null` → generic equity queries |
-| `tractPopupMetric` | `(props, field, layerLabel) → string` | HTML for map click popup |
-| `tractDetailRow` | `(props) → [label, value]\|null` | Tract sidebar detail |
 
-**`renderLegend` context** includes: `field`, `scaleMode`, `tractLegendRange`, `pres`, `isAnalysisLayer`, `layerId`, `layerLabels`.
+| Hook                    | Signature                                                        | Purpose                                                 |
+| ----------------------- | ---------------------------------------------------------------- | ------------------------------------------------------- |
+| `choroplethField`       | `(city, layerId, appMode, analysisLayerId) → string|null`        | Which tract property colors the map                     |
+| `choroplethFillPaint`   | `(field, valueRange, ctx) → MapLibre paint|null`                 | Custom `fill-color` expression                          |
+| `renderLegend`          | `(ctx) → {title, low, high, colorStops, showScaleControls}|null` | Legend HTML                                             |
+| `renderStats`           | `(city, runStats) → string`                                      | Stats cards HTML above map                              |
+| `formatChoroplethValue` | `(value, field) → string`                                        | Popup / legend formatting                               |
+| `usesLocalValueScale`   | `(field) → boolean`                                              | Whether local min/max scaling applies                   |
+| `showsScaleControls`    | `(ctx) → boolean`                                                | Fixed/local scale toggle (LST)                          |
+| `chatContext`           | `(city, runStats) → string`                                      | Extra chat context beyond summary                       |
+| `chatContextSummary`    | `(city) → string`                                                | Default summary template                                |
+| `keyQueries`            | `(ctx) → [{label, prompt, style}]|null`                          | Suggested chat buttons; `null` → generic equity queries |
+| `tractPopupMetric`      | `(props, field, layerLabel) → string`                            | HTML for map click popup                                |
+| `tractDetailRow`        | `(props) → [label, value]|null`                                  | Tract sidebar detail                                    |
+
+
+`**renderLegend` context** includes: `field`, `scaleMode`, `tractLegendRange`, `pres`, `isAnalysisLayer`, `layerId`, `layerLabels`.
 
 ### 2.4 Map rendering patterns
 
@@ -617,18 +692,20 @@ See `web/plugins/obia_plugin.js` — `classPresentation()`, `formatClassLabel()`
 
 Exposed on `window.DashboardAdapter` (used by `app.js` and `gf_frame_*.js`):
 
-| Method | Purpose |
-|--------|---------|
-| `fetchModels()` | Load and cache `GET /api/models` |
-| `getModelSpec(modelId)` | Full spec with merged `presentation` |
-| `getPresentation(modelId)` | Presentation object only |
-| `getPlugin(modelId)` | Raw plugin instance |
-| `inputAccept` / `inputHint` / `fileDropTitle` | Ask upload UI |
-| `cityRunStats` / `cityRunWarning` / `cityPrimaryValue` | Per-city stats helpers |
-| `formatPrimaryValue` / `formatPrimaryValueShort` | Bar chart + city list |
-| `choroplethField` | Delegates to plugin |
-| `keyQueries` | Plugin queries or `genericEquityKeyQueries` |
-| `registerPlugin(plugin)` | Runtime registration (optional) |
+
+| Method                                                 | Purpose                                     |
+| ------------------------------------------------------ | ------------------------------------------- |
+| `fetchModels()`                                        | Load and cache `GET /api/models`            |
+| `getModelSpec(modelId)`                                | Full spec with merged `presentation`        |
+| `getPresentation(modelId)`                             | Presentation object only                    |
+| `getPlugin(modelId)`                                   | Raw plugin instance                         |
+| `inputAccept` / `inputHint` / `fileDropTitle`          | Ask upload UI                               |
+| `cityRunStats` / `cityRunWarning` / `cityPrimaryValue` | Per-city stats helpers                      |
+| `formatPrimaryValue` / `formatPrimaryValueShort`       | Bar chart + city list                       |
+| `choroplethField`                                      | Delegates to plugin                         |
+| `keyQueries`                                           | Plugin queries or `genericEquityKeyQueries` |
+| `registerPlugin(plugin)`                               | Runtime registration (optional)             |
+
 
 ---
 
@@ -699,12 +776,14 @@ const MODEL_RUN_STEPS = {
 
 ### 4.2 Where plugins are consumed
 
-| File | Plugin usage |
-|------|----------------|
+
+| File                 | Plugin usage                                                                           |
+| -------------------- | -------------------------------------------------------------------------------------- |
 | `gf_frame_shared.js` | `getPresentation`, `cityPrimaryValue`, `keyQueries`, bar chart labels, dashboard title |
-| `gf_frame_map.js` | `getPlugin`, `choroplethField`, `renderLegend`, `choroplethFillPaint`, tract popups |
-| `gf_frame_chat.js` | `chatContextSummary`, `cityRunStats`, sends `analysis_model` to API |
-| `app.js` | `fetchModels`, presentation for Ask labels and progress |
+| `gf_frame_map.js`    | `getPlugin`, `choroplethField`, `renderLegend`, `choroplethFillPaint`, tract popups    |
+| `gf_frame_chat.js`   | `chatContextSummary`, `cityRunStats`, sends `analysis_model` to API                    |
+| `app.js`             | `fetchModels`, presentation for Ask labels and progress                                |
+
 
 ### 4.3 Vector layer URLs
 
@@ -720,7 +799,7 @@ When `status === "ready"`, `get_project()` attaches per city:
 }
 ```
 
-MapLibre loads GeoJSON from `geojson_url`. Fields must include your `choroplethField`.
+MapLibre loads GeoJSON from `geojson_url` (served from `tracts.gpkg` on demand after cleanup). Fields must include your `choroplethField`.
 
 ---
 
@@ -791,30 +870,34 @@ No plugin file needed — ensure `primary_metric` exists in `run_stats` and trac
 
 ### 6.1 City entry after successful run
 
-| Field | Source |
-|-------|--------|
-| `status` | `"ready"` |
-| `model_id` | Your model id |
-| `run_stats` | `ModelResult.stats` + `stats_updates` |
-| `lst_stats` | Alias of `run_stats` (legacy) |
-| `vector_fields` | `PostProcessResult.vector_fields` |
-| `primary_raster` | `ModelResult.primary_raster` |
-| `summary`, `map_layers`, `geocode`, `bounds_wgs84` | `city_fields` |
-| `vector_layer` | Enriched response from `get_project()` |
+
+| Field                                              | Source                                 |
+| -------------------------------------------------- | -------------------------------------- |
+| `status`                                           | `"ready"`                              |
+| `model_id`                                         | Your model id                          |
+| `run_stats`                                        | `ModelResult.stats` + `stats_updates`, minus scrubbed file-path keys (§1.9) |
+| `lst_stats`                                        | Alias of `run_stats` (legacy)          |
+| `vector_fields`                                    | `PostProcessResult.vector_fields`      |
+| `primary_raster`                                   | `ModelResult.primary_raster`           |
+| `summary`, `map_layers`, `geocode`, `bounds_wgs84` | `city_fields`                          |
+| `vector_layer`                                     | Enriched response from `get_project()` |
+
 
 ### 6.2 Endpoints (no new routes needed)
 
-| Method | Path |
-|--------|------|
-| `GET` | `/api/models` |
-| `POST` | `/api/projects` |
-| `POST` | `/api/projects/{id}/cities` |
+
+| Method | Path                                             |
+| ------ | ------------------------------------------------ |
+| `GET`  | `/api/models`                                    |
+| `POST` | `/api/projects`                                  |
+| `POST` | `/api/projects/{id}/cities`                      |
 | `POST` | `/api/projects/{id}/cities/{key}/run?model={id}` |
-| `GET` | `/api/projects/{id}` |
-| `GET` | `/api/projects/{id}/cities/{key}/geojson` |
-| `GET` | `/api/projects/{id}/cities/{key}/gpkg` |
-| `POST` | `/api/followup` |
-| `POST` | `/api/projects/{id}/report` |
+| `GET`  | `/api/projects/{id}`                             |
+| `GET`  | `/api/projects/{id}/cities/{key}/geojson`        |
+| `GET`  | `/api/projects/{id}/cities/{key}/gpkg`           |
+| `POST` | `/api/followup`                                  |
+| `POST` | `/api/projects/{id}/report`                      |
+
 
 ### 6.3 API smoke test (curl)
 
@@ -883,31 +966,39 @@ Get-Content data/projects/YOUR_PROJECT_ID/manifest.json | python -m json.tool
 
 Look for `cities.{key}.error` and `status: "error"`.
 
+After a **successful** run, expect only `tracts.gpkg` under `data/projects/{id}/cities/{key}/` (no `uploads/` unless `KEEP_UPLOADS_AFTER_RUN=true`). See §1.9.
+
 ### 7.5 Common failures
 
-| Symptom | Likely cause | Fix |
-|---------|--------------|-----|
-| Model not in dropdown | Registry import error | Check terminal on `python serve.py` |
-| `GET /api/models` 404 | Stale server | Kill port 8765, restart |
-| Run button hidden | City not added | Click **Add city to project** first |
-| `Unsupported file type` | Extension not in `ALLOWED_UPLOAD_SUFFIXES` | Extend `constants.py` or convert files |
-| `status: error` | Pipeline exception | Read `city.error`; reproduce offline |
-| Empty tract choropleth | CRS/extent mismatch | Register city matching raster footprint |
-| Map gray / no fill | Wrong `choroplethField` | Match GPKG column name exactly |
-| Bar chart `—` | Missing `primary_metric` in `run_stats` | Set in `post_process` stats_updates |
-| Chat talks about LST | Wrong system prompt | Add branch in `dashboard.py` |
-| Stale UI after edit | Browser cache | Bump `?v=` on changed JS files |
-| Plugin changes ignored | Module cache | Bump `dashboard_adapter.js?v=` |
+
+| Symptom                 | Likely cause                               | Fix                                     |
+| ----------------------- | ------------------------------------------ | --------------------------------------- |
+| Model not in dropdown   | Registry import error                      | Check terminal on `python serve.py`     |
+| `GET /api/models` 404   | Stale server                               | Kill port 8765, restart                 |
+| Run button hidden       | City not added                             | Click **Add city to project** first     |
+| `Unsupported file type` | Extension not in `ALLOWED_UPLOAD_SUFFIXES` | Extend `constants.py` or convert files  |
+| `status: error`         | Pipeline exception                         | Read `city.error`; reproduce offline    |
+| Empty tract choropleth  | CRS/extent mismatch                        | Register city matching raster footprint |
+| Map gray / no fill      | Wrong `choroplethField`                    | Match GPKG column name exactly          |
+| Bar chart `—`           | Missing `primary_metric` in `run_stats`    | Set in `post_process` stats_updates     |
+| Uploads gone after run  | Default post-success cleanup (§1.9)          | Set `KEEP_UPLOADS_AFTER_RUN=true` in `.env` |
+| Intermediate outputs missing | Default cleanup or path in `run_stats` scrubbed | Use `KEEP_INTERMEDIATE_ARTIFACTS=true`; register folder in `storage.py` |
+| Chat talks about LST    | Wrong system prompt                        | Add branch in `dashboard.py`            |
+| Stale UI after edit     | Browser cache                              | Bump `?v=` on changed JS files          |
+| Plugin changes ignored  | Module cache                               | Bump `dashboard_adapter.js?v=`          |
+
 
 ### 7.6 Test inputs
 
 The repo does **not** ship synthetic rasters or a data generator. Use your own files:
 
-| Model | Typical inputs | City on Ask |
-|-------|----------------|-------------|
-| LST | Landsat `ST_B10`, `SR_B4`, `SR_B5` GeoTIFFs for one scene | US city overlapping the tiles |
-| OBIA | Multispectral GeoTIFF + training shapefile (`.shp`, `.shx`, `.dbf`; `.prj` recommended) | US city overlapping the raster |
-| NDVI (example) | Multispectral GeoTIFF with red + NIR in the band order your pipeline expects | Same city as raster extent |
+
+| Model          | Typical inputs                                                                          | City on Ask                    |
+| -------------- | --------------------------------------------------------------------------------------- | ------------------------------ |
+| LST            | Landsat `ST_B10`, `SR_B4`, `SR_B5` GeoTIFFs for one scene                               | US city overlapping the tiles  |
+| OBIA           | Multispectral GeoTIFF + training shapefile (`.shp`, `.shx`, `.dbf`; `.prj` recommended) | US city overlapping the raster |
+| NDVI (example) | Multispectral GeoTIFF with red + NIR in the band order your pipeline expects            | Same city as raster extent     |
+
 
 **Before uploading:**
 
@@ -923,18 +1014,20 @@ Copy-paste reference for a **complete** NDVI model. After applying all steps, re
 
 **Files created (7 new + 4 edits):**
 
-| # | File | Action |
-|---|------|--------|
-| 1 | `models/ndvi_core.py` | Create |
-| 2 | `backend/pipelines/ndvi_zonal.py` | Create |
-| 3 | `models/ndvi_model.py` | Create |
-| 4 | `models/registry.py` | Edit — register `NDVI_MODEL` |
-| 5 | `web/plugins/ndvi_plugin.js` | Create |
-| 6 | `web/dashboard_adapter.js` | Edit — import plugin |
-| 7 | `web/index.html` | Edit — bump `dashboard_adapter.js?v=` |
-| 8 | `web/app.js` | Edit (optional) — `MODEL_RUN_STEPS.ndvi` |
-| 9 | `backend/chat/dashboard.py` | Edit (optional) — `NDVI_SYSTEM_PROMPT` |
-| 10 | `backend/projects/compare.py` | Edit (optional) — `METRIC_ALIASES` |
+
+| #   | File                              | Action                                   |
+| --- | --------------------------------- | ---------------------------------------- |
+| 1   | `models/ndvi_core.py`             | Create                                   |
+| 2   | `backend/pipelines/ndvi_zonal.py` | Create                                   |
+| 3   | `models/ndvi_model.py`            | Create                                   |
+| 4   | `models/registry.py`              | Edit — register `NDVI_MODEL`             |
+| 5   | `web/plugins/ndvi_plugin.js`      | Create                                   |
+| 6   | `web/dashboard_adapter.js`        | Edit — import plugin                     |
+| 7   | `web/index.html`                  | Edit — bump `dashboard_adapter.js?v=`    |
+| 8   | `web/app.js`                      | Edit (optional) — `MODEL_RUN_STEPS.ndvi` |
+| 9   | `backend/chat/dashboard.py`       | Edit (optional) — `NDVI_SYSTEM_PROMPT`   |
+| 10  | `backend/projects/compare.py`     | Edit (optional) — `METRIC_ALIASES`       |
+
 
 ---
 
@@ -1146,7 +1239,7 @@ def _post_process_ndvi(result: ModelResult, ctx: RunContext) -> PostProcessResul
         out_geojson=out_geojson,
     )
 
-    stats_updates = dict(result.stats)
+    stats_updates: dict = {}
     tract_ndvi = enriched["ndvi_mean"].dropna()
     if not tract_ndvi.empty:
         tract_mean = round(float(tract_ndvi.mean()), 3)
@@ -1243,7 +1336,7 @@ import ndviPlugin from "./plugins/ndvi_plugin.js";
 
 ### 8.7 Optional polish
 
-**`web/app.js`** — progress step labels:
+`**web/app.js**` — progress step labels:
 
 ```javascript
 ndvi: [
@@ -1255,7 +1348,7 @@ ndvi: [
 ],
 ```
 
-**`backend/chat/dashboard.py`** — avoid LST-themed chat for NDVI:
+`**backend/chat/dashboard.py**` — avoid LST-themed chat for NDVI:
 
 ```python
 NDVI_SYSTEM_PROMPT = (
@@ -1274,7 +1367,7 @@ def _system_prompt(context: dict) -> str:
     return LST_SYSTEM_PROMPT
 ```
 
-**`backend/projects/compare.py`**:
+`**backend/projects/compare.py**`:
 
 ```python
 "ndvi_mean": ["ndvi", "vegetation", "greenness", "vegetation index"],
@@ -1318,11 +1411,13 @@ If `non-null tracts: 0`, see [CRS handling](#crs-handling-critical-for-raster-zo
 
 Pick one scalar per city for bar charts and comparison:
 
-| Model | `primary_metric` | Notes |
-|-------|------------------|-------|
-| LST | `mean_C` | Scene / tract mean temperature |
-| OBIA | `primary_value` | Labeled or total segment count |
-| NDVI | `ndvi_mean` | Mean vegetation index |
+
+| Model | `primary_metric` | Notes                          |
+| ----- | ---------------- | ------------------------------ |
+| LST   | `mean_C`         | Scene / tract mean temperature |
+| OBIA  | `primary_value`  | Labeled or total segment count |
+| NDVI  | `ndvi_mean`      | Mean vegetation index          |
+
 
 Populate it in `run_stats` after `post_process` merges `stats_updates`.
 
@@ -1347,33 +1442,39 @@ Avoid raw numpy scalars — convert with `float()`, `round()`, or `to_json_safe(
 
 ### Anti-patterns
 
-| Don't | Do instead |
-|-------|------------|
-| Hardcode model id in API routes | Use registry + `?model=` |
-| Store only scene stats, skip tracts | Implement `post_process` zonal join |
-| Reuse LST column names for non-temperature data | Use model-specific prefixes (`ndvi_mean`) |
-| Edit `gf_frame_map.js` per model | Put logic in plugins |
-| Skip chat system prompt | Add `analysis_model` branch in `dashboard.py` |
+
+| Don't                                           | Do instead                                    |
+| ----------------------------------------------- | --------------------------------------------- |
+| Hardcode model id in API routes                 | Use registry + `?model=`                      |
+| Store only scene stats, skip tracts             | Implement `post_process` zonal join           |
+| Put GeoTIFF/GPKG paths in `run_stats`           | Use `artifacts` within the run; persist numeric summaries only (§1.9) |
+| Reuse LST column names for non-temperature data | Use model-specific prefixes (`ndvi_mean`)     |
+| Edit `gf_frame_map.js` per model                | Put logic in plugins                          |
+| Skip chat system prompt                         | Add `analysis_model` branch in `dashboard.py` |
+
 
 ---
 
 ## Part 10 — File map
 
-| Action | File(s) |
-|--------|---------|
-| Pipeline logic | `models/your_core.py` **(new)** |
-| Zonal join | `backend/pipelines/your_zonal.py` **(new)** |
-| Model spec | `models/your_model.py` **(new)** |
-| Register backend | `models/registry.py` |
-| Chat prompt | `backend/chat/dashboard.py` |
-| Comparison aliases | `backend/projects/compare.py` |
-| Upload types | `backend/core/constants.py` (if new extensions) |
-| Env vars | `.env.example` |
-| Frontend plugin | `web/plugins/your_plugin.js` **(new)** |
-| Register frontend | `web/dashboard_adapter.js` |
-| Cache bust | `web/index.html` |
-| Progress steps | `web/app.js` |
-| User docs | `docs/MODELS.md`, `CHANGELOG.md` |
+
+| Action             | File(s)                                         |
+| ------------------ | ----------------------------------------------- |
+| Pipeline logic     | `models/your_core.py` **(new)**                 |
+| Zonal join         | `backend/pipelines/your_zonal.py` **(new)**     |
+| Model spec         | `models/your_model.py` **(new)**                |
+| Register backend   | `models/registry.py`                            |
+| Post-run cleanup   | `backend/core/storage.py` (if new scratch dirs) |
+| Chat prompt        | `backend/chat/dashboard.py`                     |
+| Comparison aliases | `backend/projects/compare.py`                   |
+| Upload types       | `backend/core/constants.py` (if new extensions) |
+| Env vars           | `.env.example`                                  |
+| Frontend plugin    | `web/plugins/your_plugin.js` **(new)**          |
+| Register frontend  | `web/dashboard_adapter.js`                      |
+| Cache bust         | `web/index.html`                                |
+| Progress steps     | `web/app.js`                                    |
+| User docs          | `docs/MODELS.md`, `CHANGELOG.md`                |
+
 
 **You typically do not need to modify:** `serve.py`, `backend/api/routes/projects.py`, `gf_frame_map.js`, `gf_frame_shared.js` (if hooks suffice).
 
@@ -1386,3 +1487,4 @@ Avoid raw numpy scalars — convert with `float()`, `round()`, or `to_json_safe(
 - [API.md](API.md) — REST reference
 - [DATA.md](DATA.md) — folders, manifest, caches
 - [DEMO.md](DEMO.md) — stakeholder walkthrough
+

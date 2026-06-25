@@ -10,9 +10,8 @@ Geospatial-GUI-1/
 │   ├── projects/{project_id}/   # Multi-city analysis portfolios
 │   │   ├── manifest.json        # project model_id, city statuses
 │   │   └── cities/{city_key}/
-│   │       ├── uploads/         # User input files (e.g. Landsat GeoTIFFs)
-│   │       ├── tracts.gpkg      # Census + model fields (e.g. lst_mean_C)
-│   │       └── tracts.geojson
+│   │       ├── uploads/         # User input files (removed after successful run by default)
+│   │       └── tracts.gpkg      # Census + model fields (e.g. lst_mean_C); GeoJSON served on demand
 │   └── city_layers_cache/       # Heat & Equity cached downloads
 │       ├── tiger/               # State tract shapefiles (.zip)
 │       ├── gpkg/                # Per-city tract GeoPackages
@@ -46,7 +45,7 @@ Geospatial-GUI-1/
 |------|----------|--------|--------|
 | Model inputs | `data/projects/{id}/cities/{key}/uploads/` | Per model (GeoTIFF for LST) | User browser upload |
 | Pipeline output | Temp under uploads | GeoTIFF | `models/*_model.py` via registry |
-| Enriched tracts | `tracts.gpkg`, `tracts.geojson` | Vector | Model `post_process` (e.g. `backend/lst_zonal.py`) |
+| Enriched tracts | `tracts.gpkg` | Vector | Model `post_process` (e.g. `backend/lst_zonal.py`); GeoJSON derived on demand |
 
 The Ask tab loads required inputs from `GET /api/models`, registers cities with `POST /api/projects/{id}/cities`, then runs `POST .../run?model={id}`. Workflow is two steps: **Add city to project**, then **Run analysis** (run button appears after the city is registered).
 
@@ -101,6 +100,10 @@ Copy `.env.example` to `.env`. `serve.py` loads `.env` on startup (existing shel
 | `CHAT_RATE_LIMIT_MAX` | No (default `15`) | Max follow-up chat requests per IP per window |
 | `CHAT_RATE_LIMIT_WINDOW` | No (default `60`) | Rate-limit window in seconds |
 | `CHAT_MAX_QUESTION_LENGTH` | No (default `2000`) | Max characters per chat question |
+| `UPLOAD_MAX_FILE_MB` | No (default `500`) | Max size per uploaded file |
+| `UPLOAD_MAX_TOTAL_MB` | No (default `2048`) | Max total upload size per request |
+| `KEEP_UPLOADS_AFTER_RUN` | No (default `false`) | Keep raw uploads under `cities/{key}/uploads/` after success |
+| `KEEP_INTERMEDIATE_ARTIFACTS` | No (default `false`) | Keep `uploads/results/` (LST) or `obia_output/` after success |
 
 Get a Census key: https://api.census.gov/data/key_signup.html
 
@@ -122,6 +125,14 @@ Downloading `tl_2023_{state}_tract.zip` can take **10–30 seconds** (~20–40 M
 # Windows PowerShell — remove all city-layer caches
 Remove-Item -Recurse -Force data\city_layers_cache
 ```
+
+### After a successful Ask run (default retention)
+
+| Kept | Removed |
+|------|---------|
+| `manifest.json`, `tracts.gpkg`, numeric `run_stats` | Raw uploads (`uploads/`), LST `uploads/results/`, OBIA `obia_output/`, duplicate `tracts.geojson` |
+
+Set `KEEP_UPLOADS_AFTER_RUN=true` or `KEEP_INTERMEDIATE_ARTIFACTS=true` in `.env` to retain inputs or pipeline intermediates for debugging.
 
 ---
 

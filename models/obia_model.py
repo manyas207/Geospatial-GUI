@@ -121,12 +121,10 @@ def _post_process_obia(result: ModelResult, ctx: RunContext) -> PostProcessResul
         raise FileNotFoundError("Census tract layer not found after city-layers load.")
 
     out_gpkg = ctx.city_dir / "tracts.gpkg"
-    out_geojson = ctx.city_dir / "tracts.geojson"
     enriched = enrich_tracts_with_obia(
         tract_gdf,
         Path(segments_gpkg),
         out_gpkg=out_gpkg,
-        out_geojson=out_geojson,
     )
 
     stats_updates = dict(result.stats)

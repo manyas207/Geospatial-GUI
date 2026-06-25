@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from backend.core.constants import TRACT_LAYER
+from backend.core.storage import cleanup_city_after_success, scrub_artifact_paths
 from backend.layers.geocode import geocode_address
 from backend.core.json_util import to_json_safe
 from backend.core.presets import PRESET_CITIES
@@ -148,13 +149,16 @@ def _enrich_project_response(manifest: dict, projects_dir: Path) -> dict:
 
         if city.get("status") == "ready":
             gpkg = _city_dir(project_id, key, projects_dir) / "tracts.gpkg"
-            if gpkg.exists():
+            bounds = city.get("bounds_wgs84")
+            if bounds is None and gpkg.exists():
                 gdf = gpd.read_file(gpkg, layer=TRACT_LAYER)
                 west, south, east, north = gdf.total_bounds
+                bounds = [float(west), float(south), float(east), float(north)]
+            if gpkg.exists() and bounds is not None:
                 fields = _city_vector_fields(city, project_model_id)
                 city["vector_layer"] = {
                     "token": f"{project_id}:{key}",
-                    "bounds_wgs84": [float(west), float(south), float(east), float(north)],
+                    "bounds_wgs84": bounds,
                     "fields": fields,
                     "layer": TRACT_LAYER,
                     **_vector_urls(project_id, key),
@@ -331,6 +335,10 @@ def run_city_model_upload(
         )
         if result.logs:
             city["run_logs"] = result.logs[:8000]
+
+        cleanup_city_after_success(city_dir, model_id=spec.id)
+        city["run_stats"] = scrub_artifact_paths(city["run_stats"])
+        city["lst_stats"] = city["run_stats"]
     except Exception as exc:
         city["status"] = "error"
         city["error"] = str(exc)
