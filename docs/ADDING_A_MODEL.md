@@ -2,6 +2,8 @@
 
 Comprehensive end-to-end guide for registering a new geospatial analysis model in the Geospatial GUI.
 
+**Fastest path:** copy the raster→tract starter files from [`templates/model/`](../templates/model/) (see [`FILES.txt`](../templates/model/FILES.txt) for a one-page file list), rename `your_model` → your model `id`, register in `models/registry.py` and `web/dashboard_adapter.js`, then follow the [Quick checklist](#quick-checklist) below.
+
 A model spans **three layers** that must agree on the same `id` (e.g. `ndvi`):
 
 
@@ -20,6 +22,19 @@ A model spans **three layers** that must agree on the same `id` (e.g. `ndvi`):
 | LST   | `models/lst_model.py`  | `models/lst_pipeline.py` | `backend/pipelines/lst_zonal.py`  | `web/plugins/lst_plugin.js`  |
 | OBIA  | `models/obia_model.py` | `models/obia_core.py`    | `backend/pipelines/obia_zonal.py` | `web/plugins/obia_plugin.js` |
 
+
+**Starter templates** (minimal raster→tract model; not registered until you copy and wire them up):
+
+
+| Template | Copy to |
+| -------- | ------- |
+| `templates/model/models/your_model_core.py` | `models/<id>_core.py` |
+| `templates/model/models/your_model.py` | `models/<id>_model.py` |
+| `templates/model/backend/pipelines/your_zonal.py` | `backend/pipelines/<id>_zonal.py` |
+| `templates/model/web/plugins/your_model_plugin.js` | `web/plugins/<id>_plugin.js` |
+
+
+`models/registry.py` and `web/dashboard_adapter.js` include commented registration lines pointing here. For OBIA-style models (segmentation, categorical maps), use LST/OBIA as references instead of the templates.
 
 ---
 
@@ -190,10 +205,12 @@ The Ask tab polls `GET /api/projects/{id}` every few seconds until the city is `
 
 ### Component map
 
+Starter copies live under `templates/model/` (mirror these paths). See [`templates/model/FILES.txt`](../templates/model/FILES.txt).
+
 ```
 models/
   contract.py          # ModelSpec, RunContext, ModelResult, PostProcessResult
-  registry.py          # _MODELS dict — register here
+  registry.py          # _MODELS dict — register here (commented template at top)
   your_core.py         # heavy pipeline logic (recommended)
   your_model.py        # ModelSpec instance + run/post_process hooks
 
@@ -247,17 +264,18 @@ Set `KEEP_UPLOADS_AFTER_RUN=true` or `KEEP_INTERMEDIATE_ARTIFACTS=true` in `.env
 
 ## Quick checklist
 
-- [ ] **1.** Implement core pipeline (`models/your_core.py`)
-- [ ] **2.** Add zonal join (`backend/pipelines/your_zonal.py`) if tract-based
-- [ ] **3.** Create `models/your_model.py` (`ModelSpec`, `run`, `post_process`)
-- [ ] **4.** Register in `models/registry.py`
+- [ ] **0.** (Recommended) Copy [`templates/model/`](../templates/model/) files to project paths; rename `your_model` → your `id` everywhere (see [`FILES.txt`](../templates/model/FILES.txt))
+- [ ] **1.** Implement core pipeline (`models/your_core.py`) — or edit the copied `your_model_core.py`
+- [ ] **2.** Add zonal join (`backend/pipelines/your_zonal.py`) if tract-based — template included for continuous rasters
+- [ ] **3.** Create `models/your_model.py` (`ModelSpec`, `run`, `post_process`) — or edit the copied `your_model.py`
+- [ ] **4.** Register in `models/registry.py` (uncomment/adapt the template lines at the top of the file)
 - [ ] **5.** (Optional) Add env vars to `.env.example`
 - [ ] **5b.** If your pipeline writes a model-specific scratch folder, register it in `backend/core/storage.py` → `cleanup_city_after_success()` (see §1.9)
 - [ ] **6.** (Optional) Add `METRIC_ALIASES` in `backend/projects/compare.py`
 - [ ] **7.** (Optional) Add chat system prompt in `backend/chat/dashboard.py`
 - [ ] **8.** Restart `python serve.py` — verify `GET /api/models`
-- [ ] **9.** Create `web/plugins/your_plugin.js`
-- [ ] **10.** Register in `web/dashboard_adapter.js`; bump `?v=` in `index.html`
+- [ ] **9.** Create `web/plugins/your_plugin.js` — or copy from `templates/model/web/plugins/your_model_plugin.js`
+- [ ] **10.** Register in `web/dashboard_adapter.js` (uncomment/adapt the template import); bump `?v=` in `index.html`
 - [ ] **11.** (Optional) Add `MODEL_RUN_STEPS.your_id` in `web/app.js`
 - [ ] **12.** Smoke test full Ask → dashboard → chat flow
 - [ ] **13.** Document in [MODELS.md](MODELS.md) and [CHANGELOG.md](../CHANGELOG.md)
@@ -450,6 +468,8 @@ The dashboard surfaces this via `DashboardAdapter.cityRunWarning()`.
 
 ### 1.5 Register in `models/registry.py`
 
+The file header points to [`templates/model/`](../templates/model/). After copying and renaming template files, uncomment and adapt:
+
 ```python
 from models.ndvi_model import NDVI_MODEL
 
@@ -535,6 +555,8 @@ Or set `KEEP_INTERMEDIATE_ARTIFACTS=true` in `.env` while developing (retains LS
 
 ### 2.1 Minimal working plugin
 
+Copy [`templates/model/web/plugins/your_model_plugin.js`](../templates/model/web/plugins/your_model_plugin.js) to `web/plugins/<id>_plugin.js` and rename `your_model` → your `id`, or use the NDVI example below.
+
 This is enough for Ask labels, bar chart, map choropleth, and tract popups (using `createPlugin` defaults for legend/paint):
 
 ```javascript
@@ -574,7 +596,7 @@ export default createPlugin({
 });
 ```
 
-Register in `web/dashboard_adapter.js`:
+Register in `web/dashboard_adapter.js` (the file header has commented template lines):
 
 ```javascript
 import ndviPlugin from "./plugins/ndvi_plugin.js";
@@ -1010,23 +1032,25 @@ The repo does **not** ship synthetic rasters or a data generator. Use your own f
 
 ## Part 8 — Worked example (NDVI, end-to-end)
 
-Copy-paste reference for a **complete** NDVI model. After applying all steps, restart the server and run the [smoke test](#88-run-the-ndvi-smoke-test) with your own multispectral GeoTIFF.
+Copy-paste reference for a **complete** NDVI model. The same structure is available as generic stubs under [`templates/model/`](../templates/model/) (`your_model` placeholders) — use those if you prefer copy-and-rename over the NDVI-specific snippets below.
+
+After applying all steps, restart the server and run the [smoke test](#88-run-the-ndvi-smoke-test) with your own multispectral GeoTIFF.
 
 **Files created (7 new + 4 edits):**
 
 
-| #   | File                              | Action                                   |
-| --- | --------------------------------- | ---------------------------------------- |
-| 1   | `models/ndvi_core.py`             | Create                                   |
-| 2   | `backend/pipelines/ndvi_zonal.py` | Create                                   |
-| 3   | `models/ndvi_model.py`            | Create                                   |
-| 4   | `models/registry.py`              | Edit — register `NDVI_MODEL`             |
-| 5   | `web/plugins/ndvi_plugin.js`      | Create                                   |
-| 6   | `web/dashboard_adapter.js`        | Edit — import plugin                     |
-| 7   | `web/index.html`                  | Edit — bump `dashboard_adapter.js?v=`    |
-| 8   | `web/app.js`                      | Edit (optional) — `MODEL_RUN_STEPS.ndvi` |
-| 9   | `backend/chat/dashboard.py`       | Edit (optional) — `NDVI_SYSTEM_PROMPT`   |
-| 10  | `backend/projects/compare.py`     | Edit (optional) — `METRIC_ALIASES`       |
+| #   | File                              | Action                                   | Or start from template |
+| --- | --------------------------------- | ---------------------------------------- | ---------------------- |
+| 1   | `models/ndvi_core.py`             | Create                                   | `templates/model/models/your_model_core.py` |
+| 2   | `backend/pipelines/ndvi_zonal.py` | Create                                   | `templates/model/backend/pipelines/your_zonal.py` |
+| 3   | `models/ndvi_model.py`            | Create                                   | `templates/model/models/your_model.py` |
+| 4   | `models/registry.py`              | Edit — register `NDVI_MODEL`             | commented lines in file |
+| 5   | `web/plugins/ndvi_plugin.js`      | Create                                   | `templates/model/web/plugins/your_model_plugin.js` |
+| 6   | `web/dashboard_adapter.js`        | Edit — import plugin                     | commented import in file |
+| 7   | `web/index.html`                  | Edit — bump `dashboard_adapter.js?v=`    | — |
+| 8   | `web/app.js`                      | Edit (optional) — `MODEL_RUN_STEPS.ndvi` | — |
+| 9   | `backend/chat/dashboard.py`       | Edit (optional) — `NDVI_SYSTEM_PROMPT`   | — |
+| 10  | `backend/projects/compare.py`     | Edit (optional) — `METRIC_ALIASES`       | — |
 
 
 ---
@@ -1457,23 +1481,24 @@ Avoid raw numpy scalars — convert with `float()`, `round()`, or `to_json_safe(
 
 ## Part 10 — File map
 
+One-page summary: [`templates/model/FILES.txt`](../templates/model/FILES.txt). Starter code: [`templates/model/`](../templates/model/).
 
-| Action             | File(s)                                         |
-| ------------------ | ----------------------------------------------- |
-| Pipeline logic     | `models/your_core.py` **(new)**                 |
-| Zonal join         | `backend/pipelines/your_zonal.py` **(new)**     |
-| Model spec         | `models/your_model.py` **(new)**                |
-| Register backend   | `models/registry.py`                            |
-| Post-run cleanup   | `backend/core/storage.py` (if new scratch dirs) |
-| Chat prompt        | `backend/chat/dashboard.py`                     |
-| Comparison aliases | `backend/projects/compare.py`                   |
-| Upload types       | `backend/core/constants.py` (if new extensions) |
-| Env vars           | `.env.example`                                  |
-| Frontend plugin    | `web/plugins/your_plugin.js` **(new)**          |
-| Register frontend  | `web/dashboard_adapter.js`                      |
-| Cache bust         | `web/index.html`                                |
-| Progress steps     | `web/app.js`                                    |
-| User docs          | `docs/MODELS.md`, `CHANGELOG.md`                |
+| Action             | File(s)                                         | Template |
+| ------------------ | ----------------------------------------------- | -------- |
+| Pipeline logic     | `models/your_core.py` **(new)**                 | `templates/model/models/your_model_core.py` |
+| Zonal join         | `backend/pipelines/your_zonal.py` **(new)**     | `templates/model/backend/pipelines/your_zonal.py` |
+| Model spec         | `models/your_model.py` **(new)**                | `templates/model/models/your_model.py` |
+| Register backend   | `models/registry.py`                            | commented lines at top of file |
+| Post-run cleanup   | `backend/core/storage.py` (if new scratch dirs) | — |
+| Chat prompt        | `backend/chat/dashboard.py`                     | — |
+| Comparison aliases | `backend/projects/compare.py`                   | — |
+| Upload types       | `backend/core/constants.py` (if new extensions) | — |
+| Env vars           | `.env.example`                                  | — |
+| Frontend plugin    | `web/plugins/your_plugin.js` **(new)**          | `templates/model/web/plugins/your_model_plugin.js` |
+| Register frontend  | `web/dashboard_adapter.js`                      | commented import at top of file |
+| Cache bust         | `web/index.html`                                | — |
+| Progress steps     | `web/app.js`                                    | — |
+| User docs          | `docs/MODELS.md`, `CHANGELOG.md`                | — |
 
 
 **You typically do not need to modify:** `serve.py`, `backend/api/routes/projects.py`, `gf_frame_map.js`, `gf_frame_shared.js` (if hooks suffice).
@@ -1482,6 +1507,7 @@ Avoid raw numpy scalars — convert with `float()`, `round()`, or `to_json_safe(
 
 ## Related docs
 
+- [`templates/model/`](../templates/model/) — copy-paste starter files and [`FILES.txt`](../templates/model/FILES.txt) quick file list
 - [MODELS.md](MODELS.md) — registered models, OBIA/LST reference
 - [ARCHITECTURE.md](ARCHITECTURE.md) — system modules and flows
 - [API.md](API.md) — REST reference

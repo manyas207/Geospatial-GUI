@@ -1,0 +1,43 @@
+Adding a model — files to create or edit
+=========================================
+
+Start from templates/model/ (copy files, rename your_model → your id).
+Full guide: docs/ADDING_A_MODEL.md § Quick checklist
+
+REQUIRED — create
+-----------------
+  models/<id>_core.py              Pipeline math / raster I/O
+  models/<id>_model.py              ModelSpec, run(), post_process()
+  backend/pipelines/<id>_zonal.py   Tract zonal join (if vector_join: tract_zonal)
+  web/plugins/<id>_plugin.js        Map labels, choropleth field, Ask text
+
+REQUIRED — edit (2 lines each)
+--------------------------------
+  models/registry.py                import + _MODELS entry
+  web/dashboard_adapter.js          import + PLUGINS array
+
+REQUIRED — after changes
+------------------------
+  Restart: python serve.py
+  Verify:  GET /api/models lists your id
+  Browser: hard-refresh or bump ?v= in web/index.html
+
+OPTIONAL — edit when needed
+---------------------------
+  backend/core/storage.py           cleanup_city_after_success() if scratch folder
+  web/index.html                    cache-bust ?v= on dashboard_adapter.js
+  web/app.js                        MODEL_RUN_STEPS.<id> (default steps exist)
+  backend/chat/dashboard.py         model-specific chat system prompt
+  backend/projects/compare.py         METRIC_ALIASES for natural-language ranking
+  backend/core/constants.py           new upload file extensions only
+  .env.example                      model-specific env vars
+
+OPTIONAL — document
+-------------------
+  docs/MODELS.md
+  CHANGELOG.md
+
+TYPICALLY DO NOT EDIT
+---------------------
+  serve.py, backend/api/routes/projects.py, gf_frame_map.js, gf_frame_shared.js
+  (dashboard shell is plugin-driven)

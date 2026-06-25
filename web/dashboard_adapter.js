@@ -1,11 +1,15 @@
 /**
  * Model registry client + plugin registry (per-model presentation & rendering).
+ *
+ * New model: copy templates/model/web/plugins/your_model_plugin.js → web/plugins/,
+ * import below, add to PLUGINS. See docs/ADDING_A_MODEL.md § Quick checklist.
  */
 import lstPlugin from "./plugins/lst_plugin.js";
 import obiaPlugin from "./plugins/obia_plugin.js";
+// import yourModelPlugin from "./plugins/your_model_plugin.js";
 
 const PLUGINS = {};
-[lstPlugin, obiaPlugin].forEach((plugin) => {
+[lstPlugin, obiaPlugin /* , yourModelPlugin */].forEach((plugin) => {
   PLUGINS[plugin.id] = plugin;
 });
 

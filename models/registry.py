@@ -6,12 +6,14 @@ from models.contract import ModelSpec
 from models.lst_model import LST_MODEL
 from models.obia_model import OBIA_MODEL
 
-#from models.model3_model import MODEL3_MODEL
+# New model: copy templates/model/ into project paths, rename your_model → your id.
+# Register YOUR_MODEL below. See docs/ADDING_A_MODEL.md § Quick checklist.
+# from models.your_model import YOUR_MODEL
 
 _MODELS: dict[str, ModelSpec] = {
     LST_MODEL.id: LST_MODEL,
     OBIA_MODEL.id: OBIA_MODEL,
-    #MODEL3_MODEL.id: MODEL3_MODEL,
+    # YOUR_MODEL.id: YOUR_MODEL,
 }
 
 DEFAULT_MODEL_ID = LST_MODEL.id
