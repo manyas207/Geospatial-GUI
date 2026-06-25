@@ -211,7 +211,6 @@ Geospatial-GUI-1/
 | [docs/ADDING_A_MODEL.md](docs/ADDING_A_MODEL.md) | End-to-end guide to adding a new model        |
 | [docs/API.md](docs/API.md)                       | REST endpoint reference                       |
 | [docs/DATA.md](docs/DATA.md)                     | Data folders, caches, external APIs           |
-| [docs/DEMO.md](docs/DEMO.md)                     | Stakeholder demo walkthrough                  |
 | [docs/SETUP_WINDOWS.md](docs/SETUP_WINDOWS.md)   | Beginner Windows setup (GitHub ZIP → browser) |
 | [CHANGELOG.md](CHANGELOG.md)                     | Release notes                                 |
 

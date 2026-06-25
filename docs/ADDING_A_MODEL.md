@@ -1486,5 +1486,4 @@ Avoid raw numpy scalars — convert with `float()`, `round()`, or `to_json_safe(
 - [ARCHITECTURE.md](ARCHITECTURE.md) — system modules and flows
 - [API.md](API.md) — REST reference
 - [DATA.md](DATA.md) — folders, manifest, caches
-- [DEMO.md](DEMO.md) — stakeholder walkthrough
 

@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented here.
 
+## 2026-06-25
+
+### Added
+
+- **Post-run disk cleanup** — `backend/core/storage.py` deletes raw uploads and intermediate pipeline artifacts after a successful city run; `scrub_artifact_paths()` strips on-disk paths (`geotiff`, `classified_gpkg`, etc.) from persisted `run_stats`.
+- **Retention env vars** — `KEEP_UPLOADS_AFTER_RUN` and `KEEP_INTERMEDIATE_ARTIFACTS` (default `false`) opt in to keeping uploads or LST/OBIA intermediates for debugging; documented in `.env.example` and `docs/DATA.md`.
+
+### Changed
+
+- **Default city folder layout** — successful runs keep `tracts.gpkg` and numeric stats only; removed by default: `uploads/`, LST `uploads/results/`, OBIA `obia_output/`, and duplicate `tracts.geojson` (`backend/projects/service.py`).
+- **GeoJSON on demand** — tract GeoJSON is derived from GPKG at serve time; city-layers cache and LST/OBIA `post_process` no longer write sidecar `.geojson` files (`backend/layers/orchestrator.py`, `models/lst_model.py`, `models/obia_model.py`).
+- **`backend/projects/service.py`** — vector-layer enrichment uses cached `bounds_wgs84` from the manifest when present instead of re-reading `tracts.gpkg`.
+- **`docs/ADDING_A_MODEL.md`** — further expanded model integration and local-dev guidance.
+- **`docs/DATA.md`** — updated on-disk layout, env var table, and post-run retention summary.
+
 ## 2026-06-24
 
 ### Added

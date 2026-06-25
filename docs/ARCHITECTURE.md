@@ -1,178 +1,311 @@
 # Architecture
 
-Geospatial GUI is a **terminal-launched** web application: one Python process serves a static frontend (`web/`) and a FastAPI backend (`backend/` + `models/`).
+Geospatial GUI is a **terminal-launched** web application: one Python process (`serve.py` → uvicorn) serves a static frontend (`web/`) and a FastAPI backend (`backend/` + `models/`). There is no separate database — projects, caches, and tract layers live on disk under `data/`.
+
+The system is built around a **dual plugin model**: analysis pipelines register in `models/` (backend) and presentation registers in `web/plugins/` (frontend). Both sides share the same model id (`lst`, `obia`, …) and are merged at runtime via `GET /api/models` + `web/dashboard_adapter.js`.
+
+## Design principles
+
+| Principle | What it means in practice |
+|-----------|---------------------------|
+| **Pluggable models** | New analysis types add a `ModelSpec` + frontend plugin without rewriting the Ask tab or dashboard shell. |
+| **File-backed state** | `data/projects/{id}/manifest.json` is the source of truth for multi-city portfolios; the browser keeps one active project id in `localStorage`. |
+| **Background runs** | Model execution is a FastAPI background task; the Ask tab polls `GET /api/projects/{id}` until a city is `ready` or `error`. |
+| **GPKG as canonical vector** | Enriched tracts persist as `tracts.gpkg`; GeoJSON is derived on demand for MapLibre and chat. |
+| **Disk-conscious defaults** | After a successful run, raw uploads and pipeline intermediates are deleted unless retention env vars opt in ([`backend/core/storage.py`](../backend/core/storage.py)). |
+| **Graceful AI fallback** | Chat tries Ollama first; deterministic summaries answer when the LLM is unreachable or rate-limited. |
+
+## Runtime topology
+
+```mermaid
+flowchart TB
+  subgraph browser["Browser"]
+    Ask["Ask tab<br/>app.js + limits.js"]
+    Frame["Demo / Your project<br/>gf_frame_*.js"]
+    Adapter["dashboard_adapter.js<br/>+ web/plugins/*"]
+    Ask --> Adapter
+    Frame --> Adapter
+  end
+
+  subgraph process["python serve.py (port 8765)"]
+    Main["backend/main.py"]
+    API["/api/* routers"]
+    Static["StaticFiles → web/"]
+    Main --> API
+    Main --> Static
+  end
+
+  subgraph packages["Python packages"]
+    Models["models/registry.py"]
+    Projects["backend/projects/"]
+    Layers["backend/layers/"]
+    Chat["backend/chat/"]
+    API --> Projects
+    API --> Layers
+    API --> Chat
+    Projects --> Models
+  end
+
+  subgraph disk["data/ (gitignored)"]
+    Manifest["projects/{id}/manifest.json"]
+    GPKG["cities/{key}/tracts.gpkg"]
+    Cache["city_layers_cache/"]
+  end
+
+  browser -->|"HTTP"| process
+  Projects --> Manifest
+  Projects --> GPKG
+  Layers --> Cache
+```
+
+**Boot sequence:** `serve.py` loads `.env` (without overwriting existing shell vars), verifies the expected `web/` layout, prints registered model ids, then starts uvicorn on `backend.main:app`.
+
+---
 
 ## Application tabs
 
-| Tab | Frontend | Backend | Purpose |
-|-----|----------|---------|---------|
-| **Ask** | `web/app.js`, `web/dashboard_adapter.js`, `web/plugins/*` | `GET /api/models`, `POST /api/projects/*` | Pick model, add city, upload files, run analysis |
-| **Demo** | `web/gf_frame.js`, `web/gf_frame_*.js` | `GET /api/city-layers/demo-portfolio` | 11-city preview with placeholder LST |
-| **Your project** | `web/gf_frame.js`, `web/gf_frame_*.js`, `web/dashboard_adapter.js` | `GET /api/projects/{id}`, `POST /api/followup` | Adapter-driven dashboard (unlocked after ≥1 city ready) |
+| Tab | Primary frontend | Key API routes | Purpose |
+|-----|------------------|----------------|---------|
+| **Ask** | `web/app.js`, `web/limits.js`, `web/dashboard_adapter.js` | `GET /api/config`, `GET /api/models`, `POST /api/projects/*` | Pick model → add city → upload → run analysis |
+| **Demo** | `web/gf_frame.js`, `web/gf_frame_*.js` | `GET /api/city-layers/demo-portfolio` | 11-city Heat & Equity preview (placeholder LST) |
+| **Your project** | `web/gf_frame.js`, `web/gf_frame_*.js`, `web/dashboard_adapter.js` | `GET /api/projects/{id}`, `POST /api/followup`, `POST /api/projects/{id}/report` | Adapter-driven dashboard after ≥1 city is `ready` |
+
+**Your project** unlocks in the sidebar when the active portfolio has at least one ready city. **Demo** warm-up prefetches city-layer payloads only in Demo mode (not when viewing Your project).
+
+---
+
+## Plugin architecture
+
+### Backend (`models/`)
+
+Each model is a `ModelSpec` ([`models/contract.py`](../models/contract.py)):
+
+| Hook | Role |
+|------|------|
+| `input_schema` | Describes uploads; exposed on Ask via `GET /api/models` |
+| `run(paths, ctx)` | Executes the pipeline → `ModelResult` (stats, logs, artifacts) |
+| `post_process(result, ctx)` | Optional tract enrichment → writes `tracts.gpkg`, sets `vector_fields` |
+| `dashboard` | Shell type (`equity` today — Heat & Equity frame) |
+| `primary_metric` / `vector_fields` | Keys for charts, legend, and chat |
+
+Models register in [`models/registry.py`](../models/registry.py). Dispatch is a thin call chain:
+
+```
+POST .../run?model={id}
+  → backend/api/routes/projects.py (save uploads, queue background task)
+  → backend/projects/service.py (run_city_model_upload)
+  → backend/projects/dispatch.py (run_model)
+  → models/registry.py (ModelSpec.execute → run + post_process)
+```
+
+Registered today: **`lst`** (Land Surface Temperature), **`obia`** (OBIA land cover). See [MODELS.md](MODELS.md) for pipeline details.
+
+### Frontend (`web/plugins/`)
+
+Each model has a companion plugin ([`web/model_plugin.js`](../web/model_plugin.js)) registered in [`web/dashboard_adapter.js`](../web/dashboard_adapter.js). Plugins own presentation: choropleth field, legend, stats cards, tract popups, Ask progress labels (`runVerb`, `runProgressStart`, `runProgressWorking`).
+
+`dashboard_adapter.js` fetches `GET /api/models` and **merges** API metadata with each plugin's `presentation` object so the UI stays in sync with the registry.
+
+---
 
 ## Backend layout
 
 ```
 backend/
-  main.py              # App factory; mounts routers + static web/
-  config.py            # Paths (data/, projects/, city_layers_cache/)
+  main.py                 # App factory: routers + static web/
+  config.py               # Paths: data/, projects/, city_layers_cache/
 
   api/
-    deps.py            # Shared request helpers (IP, rate limit, previews)
+    deps.py               # Client IP, rate limiter, preview helpers
     routes/
-      models.py        # GET /api/models
-      projects.py      # /api/projects/*
-      reports.py       # POST /api/projects/{id}/report
-      city_layers.py   # /api/city-layers/*
-      followup.py      # POST /api/followup
+      config.py           # GET /api/config (limits for the UI)
+      models.py           # GET /api/models
+      projects.py         # /api/projects/*
+      reports.py          # POST /api/projects/{id}/report (PDF)
+      city_layers.py      # /api/city-layers/*
+      followup.py         # POST /api/followup
 
-  core/                # Schemas, constants, uploads, presets
-  projects/            # Project storage, compare, model dispatch
-  layers/              # Geocode → census → tracts → maps
-  chat/                # Ollama, equity burden, dashboard Q&A
-  pipelines/           # LST zonal join, OBIA zonal join, raster file picking
-  report/              # PDF export
+  core/
+    limits.py             # Upload + chat limits (env → bytes/counts)
+    storage.py            # Post-run disk cleanup, scrub artifact paths from manifest
+    uploads.py            # Chunked multipart reads with size enforcement (413)
+    rate_limit.py         # In-memory per-IP chat throttle
+    presets.py            # 11 demo cities (names, colors, placeholder LST)
+    schemas.py            # Pydantic request/response models
+    constants.py          # Shared layer names, field lists
+
+  projects/
+    service.py            # Manifest CRUD, city registration, model runs
+    dispatch.py           # Registry dispatch wrapper
+    compare.py            # Cross-city comparison for chat
+
+  layers/
+    orchestrator.py       # Geocode → tracts → ACS → vector URLs
+    geocode.py            # Census Geocoder → Nominatim → demo centroids
+    tracts.py             # TIGER shapefiles (cached per state)
+    census.py             # ACS 5-year tract demographics
+    tract_query.py        # Structured tract attribute queries for chat
+    map_render.py         # Optional server-side choropleth PNGs
+
+  chat/
+    ollama.py             # HTTP client for local Ollama /api/chat
+    dashboard.py          # Follow-up Q&A grounded in dashboard context
+    equity_burden.py      # Heat-equity burden ranking
+    layer_correlation.py  # Tract-level Pearson correlations (LST vs demographics)
+
+  pipelines/
+    lst_zonal.py          # LST → tract zonal join
+    obia_zonal.py         # OBIA → tract dominant class
+    raster_util.py        # Shared raster helpers
+
+  report/
+    pdf.py                # On-demand PDF export (fpdf2)
 ```
 
-## Backend modules
+---
 
-### Core API (`backend/main.py` + `backend/api/routes/`)
+## Cross-cutting services
 
-- Mounts static `web/` at `/`
-- Registers `/api/*` route modules
-- Paths and cache dirs in `backend/config.py`
+### Limits and config
 
-### Model registry (`models/contract.py`, `models/registry.py`, `models/lst_model.py`, `models/obia_model.py`)
+[`backend/core/limits.py`](../backend/core/limits.py) centralizes env-driven caps. [`GET /api/config`](API.md) exposes them to the browser (`Cache-Control: no-store`); [`web/limits.js`](../web/limits.js) validates Ask uploads and chat question length client-side before requests.
 
-Plugin contract and registration. Each model defines inputs, `run`, optional `post_process`, dashboard type, and vector fields. See [ADDING_A_MODEL.md](ADDING_A_MODEL.md) and [MODELS.md](MODELS.md).
+| Concern | Server enforcement | Client hint |
+|---------|-------------------|-------------|
+| Upload size | `backend/core/uploads.py` → **413** | `limits.js` + labels in `app.js` |
+| Chat length | `followup.py` → **400** | `limits.js` |
+| Chat rate | `backend/core/rate_limit.py` → **429** | shown in config (informational) |
 
-Registered today: `lst` (Land Surface Temperature), `obia` (OBIA land cover).
+### Post-run storage
 
-Dispatched by `backend/projects/dispatch.py` → `backend/projects/service.py` (`run_city_model_upload`). Model runs execute in a **background task**; the Ask tab polls `GET /api/projects/{id}` and shows a **model-aware** progress bar (LST vs OBIA step labels) until the city status is `ready` or `error`.
+After a successful model run, [`cleanup_city_after_success()`](../backend/core/storage.py) removes by default:
 
-### Presets (`backend/core/presets.py`)
+- Raw uploads (`uploads/`)
+- LST intermediates (`uploads/results/`)
+- OBIA intermediates (`obia_output/`)
+- Legacy duplicate `tracts.geojson`
 
-Single source of truth for the 11 demo/preset cities (names, colors, placeholder LST). Used by project service, layer orchestrator, and the Demo tab via `GET /api/projects/presets`.
+[`scrub_artifact_paths()`](../backend/core/storage.py) strips on-disk paths from persisted `run_stats`. Opt in to retention with `KEEP_UPLOADS_AFTER_RUN` or `KEEP_INTERMEDIATE_ARTIFACTS` in `.env`.
 
-### LST implementation (`models/lst_pipeline.py`, `models/lst_core.py`)
+### Vector serving
 
-Low-level Landsat LST pipeline. Wrapped by `models/lst_model.py` as registry model id `lst`.
+| Context | Canonical file | GeoJSON endpoint |
+|---------|----------------|------------------|
+| Demo / city-layers cache | `city_layers_cache/gpkg/{key}.gpkg` | `GET /api/city-layers/vector/{token}/geojson` |
+| Project city (ready) | `data/projects/.../tracts.gpkg` | `GET /api/projects/{id}/cities/{key}/geojson` |
 
-### OBIA implementation (`models/obia_core.py`, `models/obia_model.py`)
+Both paths derive GeoJSON from GPKG at serve time when no sidecar `.geojson` exists.
 
-Object-based image analysis: SLIC segmentation → spectral/shape/texture features → Random Forest classification from training ROIs → tract-level dominant class via `backend/pipelines/obia_zonal.py`.
+---
 
-Supports **1–7+ band** rasters (HLS layout when ≥7 bands; simpler RGBN mapping for fewer bands). Training shapefiles accept flexible column names (`class_id`, `macroclass`, `id` for ROI grouping). **Pixel- and point-sized** training samples are supported via centroid labeling and buffered rasterization.
+## Project lifecycle (Ask → Your project)
 
-### Project pipeline (`backend/projects/service.py`, `backend/pipelines/lst_zonal.py`, `backend/pipelines/obia_zonal.py`)
+```mermaid
+sequenceDiagram
+  participant UI as Ask tab
+  participant API as FastAPI
+  participant BG as Background task
+  participant M as models/registry
 
-Multi-city project workflow:
+  UI->>API: GET /api/models
+  UI->>API: POST /api/projects { model_id }
+  UI->>API: POST /api/projects/{id}/cities { address }
+  Note over UI: Geocode → city_key, status pending
+  UI->>API: POST .../run?model=lst (multipart files)
+  API->>BG: run_city_model_upload
+  API-->>UI: manifest (status processing)
+  loop Poll until ready/error
+    UI->>API: GET /api/projects/{id}
+  end
+  BG->>M: run + post_process
+  BG->>BG: enrich tracts.gpkg, cleanup disk, save manifest
+  UI->>UI: Redirect to Your project
+```
 
-1. `POST /api/projects` — create project under `data/projects/{id}/` (optional `model_id`)
-2. `POST /api/projects/{id}/cities` — register city (`layers/geocode.py`: Census → Nominatim → demo centroids)
-3. `POST /api/projects/{id}/cities/{key}/run?model=lst|obia` — upload files, background model run, tract enrichment when applicable
-4. `GET /api/projects/{id}` — portfolio manifest with per-city `run_stats`, `model_id`, tract vector URLs
+**City status values:** `pending` → `processing` → `ready` | `error`
 
-### Cross-city comparison (`backend/projects/compare.py`)
+**Ask workflow (two steps):**
 
-Detects city names and metrics in follow-up questions; reads `run_stats` (with `lst_stats` fallback). Returns structured `city_comparison` on `POST /api/followup`.
+1. **Add city to project** — registers address; locks `model_id` after the first city in a portfolio.
+2. **Run analysis** — button appears after step 1; uploads files and starts the background run.
 
-### City layers pipeline (`backend/layers/orchestrator.py`)
+The active `project_id` is stored in browser `localStorage`. There is no list-all-projects API — one portfolio at a time.
 
-Orchestrates the Heat & Equity data flow:
+---
 
-1. `layers/geocode.py` — Census Geocoder → Nominatim fallback (`City, ST`) → demo centroids → Census reverse geocode for county FIPS
-2. `layers/tracts.py` — tract polygons (cached Census shapefile; TIGERweb fallback)
-3. `layers/census.py` — ACS 5-year tract demographics
-4. `layers/map_render.py` — optional server-side choropleth PNGs
+## City layers pipeline (Demo tab)
 
-### AI integration
+[`backend/layers/orchestrator.py`](../backend/layers/orchestrator.py) drives Heat & Equity base layers:
 
-| Component | Role |
-|-----------|------|
-| `chat/ollama.py` | HTTP client for local Ollama `/api/chat` |
-| `chat/dashboard.py` | Follow-up Q&A grounded in dashboard context (`analysis_model` when set) |
-| `chat/equity_burden.py` | Heat-equity burden ranking for tract questions |
-| `layers/tract_query.py` | Structured tract attribute queries for chat |
+1. **Geocode** (`geocode.py`) — Census Geocoder → Nominatim fallback → demo centroids → reverse geocode for county FIPS
+2. **Tracts** (`tracts.py`) — tract polygons from cached TIGER shapefiles (per state)
+3. **Demographics** (`census.py`) — ACS 5-year variables merged into tract features
+4. **Vector layer** — GPKG written once per city; API returns `geojson_url`, `gpkg_url`, `bounds_wgs84`
+5. **Map previews** (`map_render.py`) — optional PNG choropleths when `CITY_LAYERS_RENDER_PNG=true`
+
+`GET /api/city-layers/demo-portfolio?warm=true` caches full payloads for all 11 preset cities under `data/city_layers_cache/demo_snapshots/`.
+
+---
+
+## Follow-up chat pipeline
+
+`POST /api/followup` enriches `DashboardContext` before calling Ollama ([`backend/chat/dashboard.py`](../backend/chat/dashboard.py)):
+
+| Step | Module | When |
+|------|--------|------|
+| Validate question length | `followup.py` + `limits.py` | Always |
+| Rate limit | `rate_limit.py` | Always |
+| Cross-city comparison | `projects/compare.py` | `project_id` or `demo_cities` in context |
+| Tract attribute query | `layers/tract_query.py` | `tract_layer_token` set |
+| Equity burden ranking | `chat/equity_burden.py` | Question matches burden keywords (LST projects) |
+| Layer correlations | `chat/layer_correlation.py` | Correlation-style questions (Pearson r across tract fields) |
+| LLM answer | `chat/ollama.py` | `OLLAMA_ENABLED=true` and reachable |
+| Deterministic fallback | `chat/dashboard.py` | Ollama off or unreachable |
+
+Context includes `analysis_model` (registry id) when viewing a project dashboard so answers reference the correct metrics.
+
+---
 
 ## Frontend modules
 
-### Dashboard adapter (`web/dashboard_adapter.js`)
-
-- ES module: fetches `GET /api/models`, merges API metadata with per-model plugins
-- Plugins: `web/plugins/lst_plugin.js`, `web/plugins/obia_plugin.js` (contract in `web/model_plugin.js`)
-- Shared by Ask and Heat & Equity project mode (choropleth, legend, metrics, chat hints)
-
-### Ask workflow (`web/app.js`)
-
-1. Select analysis model and enter city + optional month/year
-2. **Add city to project** (registers address in the active portfolio; model locks after first city)
-3. Upload input files
-4. **Run analysis** (step 2 button appears after step 1; label uses model `runVerb`, e.g. “Run LST for city”)
-5. Progress bar polls manifest status with per-model steps; redirects to **Your project** when ready
-
-Project is auto-created on first use (`POST /api/projects`); portfolio stored under `data/projects/{id}/`.
-
-### Heat & Equity frame (`web/gf_frame.js` + `web/gf_frame_*.js`)
-
 | File | Role |
 |------|------|
-| `gf_frame.js` | Shell bootstrap, city list, page activation |
-| `gf_frame_shared.js` | Shared state, top bar, adapter wiring, project load |
-| `gf_frame_map.js` | MapLibre map, layers, legend, tract popups |
-| `gf_frame_chat.js` | Query panel, follow-up chat, PDF export trigger |
+| `web/index.html` | Shell: sidebar tabs, page containers, script load order |
+| `web/app.js` | Ask tab: model select, two-step add/run, upload UI, progress polling |
+| `web/limits.js` | Fetches `/api/config`; client-side upload and chat validation |
+| `web/dashboard_adapter.js` | ES module: merges API models with frontend plugins |
+| `web/model_plugin.js` | Plugin factory and hook defaults |
+| `web/plugins/lst_plugin.js` | LST presentation, legend, tract popup |
+| `web/plugins/obia_plugin.js` | OBIA presentation and rendering hooks |
+| `web/gf_frame.js` | Dashboard shell bootstrap, tab activation |
+| `web/gf_frame_shared.js` | Shared state, top bar, adapter wiring, project load |
+| `web/gf_frame_map.js` | MapLibre map, layers, legend, tract popups, cross-city LST scale |
+| `web/gf_frame_chat.js` | Query panel, follow-up chat, PDF export trigger |
 
-Project mode uses adapter/plugins for primary metric, choropleth field, legend, and `analysis_model` in chat context.
+Map rendering uses **MapLibre GL** with tract GeoJSON loaded from the vector URLs in the manifest or city-layers response.
 
-## Request flows
+---
 
-### List models (Ask tab bootstrap)
+## Extension points
 
-```
-GET /api/models
-  → [{ id, label, input_schema, dashboard, primary_metric, … }]
-```
+To add analysis model #3, touch these integration surfaces (full walkthrough: [ADDING_A_MODEL.md](ADDING_A_MODEL.md)):
 
-### City layers (demo mode)
+| Layer | Files |
+|-------|-------|
+| Pipeline | `models/your_model.py` → register in `models/registry.py` |
+| Tract join | `backend/pipelines/your_zonal.py` (if `vector_join: tract_zonal`) |
+| Presentation | `web/plugins/your_model_plugin.js` → register in `dashboard_adapter.js` |
+| Docs | [MODELS.md](MODELS.md), [API.md](API.md) |
 
-```
-GET /api/city-layers/demo-portfolio?warm=true
-  → cached payloads for 11 preset cities
+Models with `dashboard: "equity"` reuse the Heat & Equity frame. A future `raster` dashboard type would need a dedicated map shell.
 
-POST /api/city-layers {"address": "Round Rock, TX"}
-  → geocode → tracts → ACS → vector_layer URLs
-```
-
-### Multi-city analysis project
-
-```
-GET /api/models
-POST /api/projects { "model_id": "lst" }          # auto-created from Ask if needed
-POST /api/projects/{id}/cities {"address": "Round Rock, TX"}
-  → user uploads files on Ask
-POST /api/projects/{id}/cities/{key}/run?model=lst (multipart files)
-  → background task: run_model (registry)
-  → LST post_process: load_city_layers + enrich_tracts_with_lst
-  → manifest updated (model_id, run_stats, lst_stats alias)
-GET /api/projects/{id}                            # polled by Ask progress bar
-```
-
-### Follow-up chat
-
-```
-POST /api/followup { question, context }
-  → validate DashboardContext (context.raster must be a string)
-  → context may include analysis_model (active registry model id)
-  → if project_id: city_comparison from manifest
-  → elif demo_cities: demo cross-city comparison
-  → if tract_layer_token: tract query (cache or project GPKG)
-  → Ollama with dashboard context (fallback stat summary if Ollama unreachable)
-```
+---
 
 ## Related docs
 
-- [ADDING_A_MODEL.md](ADDING_A_MODEL.md) — end-to-end guide for new models
-- [MODELS.md](MODELS.md) — registered models (LST, OBIA)
-- [API.md](API.md) — endpoint reference
-- [DATA.md](DATA.md) — folders, caches, external sources
-- [DEMO.md](DEMO.md) — stakeholder walkthrough
+| Doc | Contents |
+|-----|----------|
+| [ADDING_A_MODEL.md](ADDING_A_MODEL.md) | End-to-end guide for new models |
+| [MODELS.md](MODELS.md) | LST and OBIA pipeline details |
+| [API.md](API.md) | Endpoint reference |
+| [DATA.md](DATA.md) | On-disk layout, caches, env vars |

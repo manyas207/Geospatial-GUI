@@ -160,4 +160,3 @@ Set `KEEP_UPLOADS_AFTER_RUN=true` or `KEEP_INTERMEDIATE_ARTIFACTS=true` in `.env
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) — how modules connect
 - [API.md](API.md) — endpoints
-- [DEMO.md](DEMO.md) — how to present the data live

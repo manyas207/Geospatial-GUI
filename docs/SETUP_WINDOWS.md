@@ -335,8 +335,6 @@ Restart the website (`python serve.py`) after installing Ollama, then try chat o
 
 After code updates: restart `python serve.py` and hard-refresh the browser (`Ctrl + Shift + R`).
 
-For a presenter-style walkthrough, see [DEMO.md](DEMO.md).
-
 ---
 
 ## Part 9 — Running the site again later
